@@ -202,3 +202,16 @@ def run_task_tests(task_list: List[str]):
         raise ValueError(
             f"Not all tests for the specified tasks ({task_list}) ran successfully! Error code: {pytest_return_val}"
         )
+
+def setup_example_logger(task_name: str):
+    """Sets up a logger that will save each example and prediction."""
+    example_logger = logging.getLogger(f"examples_{task_name}")
+    # TODO: add more metadata to example logger filename
+    output_path = f"{datetime.now().strftime("%m-%d-%Y-%H-%M-%S")}"
+
+    filename = f"./outputs/examples_{output_path}.jsonl"
+    formatter = logging.Formatter("%(message)s")
+    handler = logging.FileHandler(filename)
+    handler.setFormatter(formatter)
+    example_logger.addHandler(handler)
+    example_logger.setLevel(logging.INFO)

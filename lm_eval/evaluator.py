@@ -23,6 +23,7 @@ def simple_evaluate(
     description_dict=None,
     check_integrity=False,
     decontamination_ngrams_path=None,
+    advanced_logging=False,
 ):
 
     """Instantiate and evaluate a model on a list of tasks.
@@ -50,6 +51,8 @@ def simple_evaluate(
         Dictionary of custom task descriptions of the form: `task_name: description`
     :param check_integrity: bool
         Whether to run the relevant part of the test suite for the tasks
+    :param advanced_logging: bool
+        Whether to save per-example and per-task predictions of the model
     :return
         Dictionary of results
     """
@@ -122,6 +125,7 @@ def evaluate(
     bootstrap_iters=100000,
     description_dict=None,
     decontamination_ngrams_path=None,
+    advanced_logging=False,
 ):
     """Instantiate and evaluate a model on a list of tasks.
 
@@ -139,7 +143,9 @@ def evaluate(
         Number of iterations for bootstrap statistics
     :param description_dict: dict[str, str]
         Dictionary of custom task descriptions of the form: `task_name: description`
-    :return
+    :param advanced_logging: bool
+        Whether to save per-example and per-task predictions of the model
+	:return
         Dictionary of results
     """
     # TODO: completely refactor this entire function to not be a huge mess, ideally breaking it down into smaller pieces
@@ -233,6 +239,12 @@ def evaluate(
             docs_for_decontamination, decontamination_ngrams_path, limit
         )
 
+	# set logging files for per-example and per-task logging
+	if advanced_logging:
+		from lm_eval.utils import setup_example_logger
+		for task_name, task in task_dict.items():
+			setup_example_logger(task_name=task_name)
+
     # all responses for each (task, doc)
     process_res_queue = collections.defaultdict(list)
 
@@ -253,7 +265,6 @@ def evaluate(
             process_res_queue[(task_name, doc_id)].append((i, resp))
 
     vals = collections.defaultdict(list)
-
     # unpack results and sort back in order and return control to Task
     for (task_name, doc_id), requests in process_res_queue.items():
         requests.sort(key=lambda x: x[0])
@@ -263,7 +274,18 @@ def evaluate(
         doc = docs[(task_name, doc_id)]
 
         metrics = task.process_results(doc, requests)
-        for metric, value in metrics.items():
+        
+		if advanced_logging:
+			metrics, example = metrics # TODO: check that task.process_results returns this (metrics, example) tuple if we want that...
+			# TODO: check this doesn't have breaking changes for the NeoX integration
+			# TODO: make it so fewshot logging info is passed, and that task.get_logging_info() is implemented
+			example.update(fewshot_logging_info)
+            example.update(task.get_logging_info())
+			# TODO: we don't want to grab the example_logger at every iteration, but do want separate logger by task...
+			example_logger = logging.getLogger("examples_{task_name}")
+            example_logger.info(json.dumps(example))
+
+		for metric, value in metrics.items():
             vals[(task_name, metric)].append(value)
 
             # Re-use the evaluation for the decontaminated set by just ignoring the overlaps
