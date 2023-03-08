@@ -1,20 +1,13 @@
-from typing import Iterable
-import numpy as np
-import random
-import re
-import os
-import json
-import hashlib
+import abc
 import datasets
-from sqlitedict import SqliteDict
-from tqdm import tqdm
 
-import torch
-import torch.nn.functional as F
+import random
 
-from lm_eval.metrics import mean, weighted_perplexity, weighted_mean, bits_per_byte
+from lm_eval.api.metrics import mean, weighted_perplexity, weighted_mean, bits_per_byte
+from lm_eval.api.request import LoglikelihoodInstance, RollingLoglikelihoodInstance
+
 from lm_eval import utils
-from abc import abstractmethod
+
 
 class Task(abc.ABC):
     """A task represents an entire benchmark including its dataset, problems,
@@ -33,7 +26,7 @@ class Task(abc.ABC):
     # The name of a subset within `DATASET_PATH`.
     DATASET_NAME: str = None
 
-    def __init__(self, data_dir=None, cache_dir=None, download_mode=None):
+    def __init__(self, data_dir=None, cache_dir=None, download_mode=None, config:dict=None):
         """
         :param data_dir: str
             Stores the path to a local folder containing the `Task`'s data files.
@@ -59,6 +52,8 @@ class Task(abc.ABC):
         self.download(data_dir, cache_dir, download_mode)
         self._training_docs = None
         self._fewshot_docs = None
+
+        self._config = config
 
     def download(self, data_dir=None, cache_dir=None, download_mode=None):
         """Downloads and returns the task dataset.
@@ -97,17 +92,17 @@ class Task(abc.ABC):
         """Whether this task supports decontamination against model training set."""
         return False
 
-    @abstractmethod
+    @abc.abstractmethod
     def has_training_docs(self):
         """Whether the task has a training set"""
         pass
 
-    @abstractmethod
+    @abc.abstractmethod
     def has_validation_docs(self):
         """Whether the task has a validation set"""
         pass
 
-    @abstractmethod
+    @abc.abstractmethod
     def has_test_docs(self):
         """Whether the task has a test set"""
         pass
@@ -144,6 +139,15 @@ class Task(abc.ABC):
         """
         return doc
 
+    @property
+    def requests(self):
+        return self._instances
+
+    @property
+    def request_type(self):
+        """Should return the subclass of Instance that is used by task"""
+        return self._req_type
+
     def fewshot_examples(self, k, rnd):
         if self._training_docs is None:
             self._training_docs = list(self.training_docs())
@@ -156,19 +160,43 @@ class Task(abc.ABC):
         )
         assert False
 
-    @abstractmethod
+    @abc.abstractmethod
     def doc_to_text(self, doc):
         pass
 
-    @abstractmethod
+    @abc.abstractmethod
     def doc_to_target(self, doc):
         pass
 
-    @abstractmethod
-    def construct_requests(self, doc, ctx):
-        """Uses RequestFactory to construct Requests and returns an iterable of
-        Requests which will be sent to the LM.
+    def build_requests(self, docs):
+        """Build a set of Requests for a task, and store them in task.instances.
 
+
+        :param docs:
+            The set of documents as returned from training_docs, validation_docs, or test_docs.
+        """
+
+        instances = []
+        for idx, doc in enumerate(docs):
+            # sample fewshot context (uses prompt defined in self.doc_to_text())
+            fewshot_ctx = self.fewshot_context(doc, self._config["num_fewshot"], rnd=random.Random())
+
+            # TODO: hardcoded for now: # of runs on each input to be 1. advanced users should have ability to run model multiple times on same input
+            inst = self.construct_requests(doc=doc, ctx=fewshot_ctx, doc_idx=idx, repeats=1)
+
+            # TODO: this means that e.g. the multiple calls for a given doc for multiple choice get added to this list as separate Instances 
+            # (albeit with shared task_index *AND* req_id)
+            if isinstance(inst, list):
+                instances.extend(inst)
+            else: 
+                instances.append(inst)
+
+        self._instances = instances
+        assert len(self._instances) != 0, "task.build_requests() did not find any docs!"
+ 
+    @abc.abstractmethod
+    def construct_requests(self, doc, ctx):
+        """
         :param doc:
             The document as returned from training_docs, validation_docs, or test_docs.
         :param ctx: str
@@ -178,7 +206,7 @@ class Task(abc.ABC):
         """
         pass
 
-    @abstractmethod
+    @abc.abstractmethod
     def process_results(self, doc, results):
         """Take a single document and the LM results and evaluates, returning a
         dict where keys are the names of submetrics and values are the values of
@@ -191,7 +219,7 @@ class Task(abc.ABC):
         """
         pass
 
-    @abstractmethod
+    @abc.abstractmethod
     def aggregation(self):
         """
         :returns: {str: [metric_score] -> float}
@@ -200,7 +228,7 @@ class Task(abc.ABC):
         """
         pass
 
-    @abstractmethod
+    @abc.abstractmethod
     def higher_is_better(self):
         """
         :returns: {str: bool}
@@ -209,19 +237,9 @@ class Task(abc.ABC):
         """
         pass
 
-    def fewshot_description(self):
-        import warnings
-
-        warnings.warn(
-            "`fewshot_description` will be removed in futures versions. Pass "
-            "any custom descriptions to the `evaluate` function instead.",
-            DeprecationWarning,
-        )
-        return ""
-
     @utils.positional_deprecated
     def fewshot_context(
-        self, doc, num_fewshot, provide_description=None, rnd=None, description=None
+        self, doc, num_fewshot, rnd=None, description=None
     ):
         """Returns a fewshot context string that is made up of a prepended description
         (if provided), the `num_fewshot` number of examples, and an appended prompt example.
@@ -230,31 +248,15 @@ class Task(abc.ABC):
             The document as returned from training_docs, validation_docs, or test_docs.
         :param num_fewshot: int
             The number of fewshot examples to provide in the returned context string.
-        :param provide_description: bool
-            Not implemented, and this option is deprecated and will be removed in a future version in favor of a different description providing method
         :param rnd: random.Random
             The pseudo-random number generator used to randomly sample examples.
             WARNING: This is currently a required arg although it's optionalized with a default `None`.
-        :param description: str
-            The task's description that will be prepended to the fewshot examples.
         :returns: str
             The fewshot context.
         """
         assert (
             rnd is not None
         ), "A `random.Random` generator argument must be provided to `rnd`"
-        assert not provide_description, (
-            "The `provide_description` arg will be removed in future versions. To prepend "
-            "a custom description to the context, supply the corresponding string via the "
-            "`description` arg."
-        )
-        if provide_description is not None:
-            # nudge people to not specify it at all
-            print(
-                "WARNING: provide_description is deprecated and will be removed in a future version in favor of description_dict"
-            )
-
-        description = description + "\n\n" if description else ""
 
         if num_fewshot == 0:
             labeled_examples = ""
@@ -286,4 +288,116 @@ class Task(abc.ABC):
             )
 
         example = self.doc_to_text(doc)
-        return description + labeled_examples + example
+        return labeled_examples + example
+
+
+class MultipleChoiceTask(Task):
+    def doc_to_target(self, doc):
+        return " " + doc["choices"][doc["gold"]]
+
+    def construct_requests(self, doc, ctx, **kwargs):
+        # lls = [
+        #     rf.loglikelihood(ctx, " {}".format(choice))[0] for choice in doc["choices"]
+        # ]
+        reqs = []
+        for inp in [ctx + self.doc_to_text(ctx) + " {}".format(choice) for choice in doc["choices"]]:
+             
+            reqs.append(LoglikelihoodInstance(doc, fewshot_context, **kwargs))
+        
+        return reqs
+
+    def process_results(self, doc, results):
+        gold = doc["gold"]
+
+        acc = 1.0 if np.argmax(results) == gold else 0.0
+        completion_len = np.array([float(len(i)) for i in doc["choices"]])
+        acc_norm = 1.0 if np.argmax(results / completion_len) == gold else 0.0
+
+        return {
+            "acc": acc,
+            "acc_norm": acc_norm,
+        }
+
+    def higher_is_better(self):
+        return {
+            "acc": True,
+            "acc_norm": True,
+        }
+
+    def aggregation(self):
+        return {
+            "acc": mean,
+            "acc_norm": mean,
+        }
+
+
+class PerplexityTask(Task, abc.ABC):
+    def should_decontaminate(self):
+        """Whether this task supports decontamination against model training set."""
+        return True
+
+    def has_training_docs(self):
+        return False
+
+    def fewshot_examples(self, k, rnd):
+        assert k == 0
+        return []
+
+    def fewshot_context(
+        self, doc, num_fewshot, rnd=None,
+    ):
+        assert (
+            num_fewshot == 0
+        ), "The number of fewshot examples must be 0 for perplexity tasks."
+        assert (
+            rnd is not None
+        ), "A `random.Random` generator argument must be provided to `rnd`."
+
+        return ""
+
+    def higher_is_better(self):
+        return {
+            "word_perplexity": False,
+            "byte_perplexity": False,
+            "bits_per_byte": False,
+        }
+
+    def doc_to_decontamination_query(self, doc):
+        return doc
+
+    def doc_to_text(self, doc):
+        return ""
+
+    def doc_to_target(self, doc):
+        return doc
+
+    def construct_requests(self, doc, ctx, doc_idx=None, repeats=1):
+        assert not ctx
+        
+        return RollingLoglikelihoodInstance([self.doc_to_target(doc)], doc, fewshot_context=ctx, doc_idx=doc_idx, repeats=1)
+
+    def process_results(self, doc, results):
+        (loglikelihood,) = results
+        words = self.count_words(doc)
+        bytes_ = self.count_bytes(doc)
+        return {
+            "word_perplexity": (loglikelihood, words),
+            "byte_perplexity": (loglikelihood, bytes_),
+            "bits_per_byte": (loglikelihood, bytes_),
+        }
+
+    def aggregation(self):
+        return {
+            "word_perplexity": weighted_perplexity,
+            "byte_perplexity": weighted_perplexity,
+            "bits_per_byte": bits_per_byte,
+        }
+
+    @classmethod
+    def count_bytes(cls, doc):
+        return len(doc.encode("utf-8"))
+
+    @classmethod
+    def count_words(cls, doc):
+        """Downstream tasks with custom word boundaries should override this!"""
+        return len(re.split(r"\s+", doc))

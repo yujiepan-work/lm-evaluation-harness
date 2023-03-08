@@ -12,8 +12,9 @@ in the broader discourse.
 
 Homepage: https://zenodo.org/record/2630551#.X4Xzn5NKjUI
 """
-from lm_eval.base import Task, rf
-from lm_eval.metrics import mean, perplexity
+from lm_eval.api.task import Task
+from lm_eval.api.request import LoglikelihoodInstance
+from lm_eval.api.metrics import mean, perplexity
 
 
 _CITATION = """
@@ -55,10 +56,8 @@ class LambadaBase(Task):
     def doc_to_target(self, doc):
         return " " + doc["text"].rsplit(" ", 1)[1]
 
-    def construct_requests(self, doc, ctx):
-        ll, is_greedy = rf.loglikelihood(ctx, self.doc_to_target(doc))
-
-        return ll, is_greedy
+    def construct_requests(self, doc, ctx, **kwargs):
+        return LoglikelihoodInstance([ctx + self.doc_to_text(doc), self.doc_to_target(doc)], doc, fewshot_context=ctx, **kwargs)
 
     def process_results(self, doc, results):
         ll, is_greedy = results
