@@ -1,6 +1,7 @@
 import abc
 import datasets
 
+import re
 import random
 
 from lm_eval.api.metrics import mean, weighted_perplexity, weighted_mean, bits_per_byte
