@@ -8,7 +8,7 @@ import re
 import random
 
 from lm_eval.api.metrics import mean, weighted_perplexity, weighted_mean, bits_per_byte
-from lm_eval.api.request import LoglikelihoodInstance, RollingLoglikelihoodInstance
+from lm_eval.api.request import LoglikelihoodInstance, RollingLoglikelihoodInstance, GenerationInstance
 
 from lm_eval import utils
 
@@ -28,6 +28,8 @@ class TaskConfig:
     aggregation: dict = None
     higher_is_better: dict = None
     num_fewshot: int = 0
+    metric_list: str = None
+    gold_alias: str = None
 
 
 class Task(abc.ABC):
@@ -200,7 +202,8 @@ class Task(abc.ABC):
         instances = []
         for idx, doc in enumerate(docs):
             # sample fewshot context (uses prompt defined in self.doc_to_text())
-            fewshot_ctx = self.fewshot_context(doc, self._config["num_fewshot"], rnd=random.Random())
+            # fewshot_ctx = self.fewshot_context(doc, self._config["num_fewshot"], rnd=random.Random())
+            fewshot_ctx = self.fewshot_context(doc, self._config.num_fewshot, rnd=random.Random())
 
             # TODO: hardcoded for now: # of runs on each input to be 1. advanced users should have ability to run model multiple times on same input
             inst = self.construct_requests(doc=doc, ctx=fewshot_ctx, doc_idx=idx, repeats=1)
@@ -384,8 +387,14 @@ class ConfigurableTask(Task):
         return utils.apply_template(self._config.doc_to_target, doc)
 
     def construct_requests(self, doc, ctx, **kwargs):
-        return LoglikelihoodInstance(
-            [ctx + self.doc_to_text(doc), self.doc_to_target(doc)],
+        # return LoglikelihoodInstance(
+        #     [ctx + self.doc_to_text(doc), self.doc_to_target(doc)],
+        #     doc,
+        #     fewshot_context=ctx,
+        #     **kwargs
+        # )
+        return GenerationInstance(
+            ctx + self.doc_to_text(doc),
             doc,
             fewshot_context=ctx,
             **kwargs
@@ -397,6 +406,8 @@ class ConfigurableTask(Task):
             gold = doc[self._config.gold_alias]
         else:
             gold = self.doc_to_target(doc)
+
+        print("results", results)
 
         result_dict = {}
         for key, result in zip(self._metric_list.keys(), results):
