@@ -13,6 +13,8 @@ from lm_eval import utils
 
 @dataclass
 class TaskConfig:
+    dataset_path: str = None
+    dataset_name: str = None
     should_decontaminate: bool = False
     has_training_docs: bool = None
     has_validation_docs: bool = None
@@ -23,12 +25,17 @@ class TaskConfig:
     aggregation: dict = None
     higher_is_better: dict = None
 
+    def __getitem__(self, key):
+        return getattr(self, key)
+    
+    def __setitem__(self, key, value):
+        return setattr(self, key, value)
 
 class Task(abc.ABC):
     """A task represents an entire benchmark including its dataset, problems,
     answers, and evaluation methods. See BoolQ for a simple example implementation
 
-    A `doc` can be any python object which represents one instance of evaluation.
+        A `doc` can be any python object which represents one instance of evaluation.
     This is usually a dictionary e.g.
         {"question": ..., "answer": ...} or
         {"question": ..., question, answer)
@@ -74,7 +81,7 @@ class Task(abc.ABC):
         """Downloads and returns the task dataset.
         Override this method to download the dataset from a custom API.
 
-        :param data_dir: str
+                :param data_dir: str
             Stores the path to a local folder containing the `Task`'s data files.
             Use this to specify the path to manually downloaded data (usually when
             the dataset is not publicly accessible).
@@ -110,41 +117,38 @@ class Task(abc.ABC):
     @abc.abstractmethod
     def has_training_docs(self):
         """Whether the task has a training set"""
-        return self._config.has_training_docs
+        pass
 
     @abc.abstractmethod
     def has_validation_docs(self):
         """Whether the task has a validation set"""
-        return self._config.has_validation_docs
+        pass
 
     @abc.abstractmethod
     def has_test_docs(self):
         """Whether the task has a test set"""
-        return self._config.has_test_docs
+        pass
 
     def training_docs(self):
         """
         :return: Iterable[obj]
             A iterable of any object, that doc_to_text can handle
         """
-        if self._config.training_split is not None:
-            return self.dataset[self._config.training_split]
+        return []
 
     def validation_docs(self):
         """
         :return: Iterable[obj]
             A iterable of any object, that doc_to_text can handle
         """
-        if self._config.validation_split is not None:
-            return self.dataset[self._config.validation_split]
+        return []
 
     def test_docs(self):
         """
         :return: Iterable[obj]
             A iterable of any object, that doc_to_text can handle
         """
-        if self._config.test_split is not None:
-            return self.dataset[self._config.test_split]
+        return []
 
     def _process_doc(self, doc):
         """
@@ -180,19 +184,11 @@ class Task(abc.ABC):
 
     @abc.abstractmethod
     def doc_to_text(self, doc):
-        _doc_to_text_type = type(self._config.doc_to_text)
-        if type(_doc_to_text_type) is str:
-            return self._config.doc_to_text.format(**doc)
-        elif type(_doc_to_text_type):
-            return self._config.doc_to_text(doc)
+        pass
 
     @abc.abstractmethod
     def doc_to_target(self, doc):
-        _doc_to_target_type = type(self._config.doc_to_target)
-        if type(_doc_to_target_type) is str:
-            return self._config.doc_to_target.format(**doc)
-        elif type(_doc_to_target_type):
-            return self._config.doc_to_target(doc)
+        pass
 
     def build_requests(self, docs):
         """Build a set of Requests for a task, and store them in task.instances.
@@ -252,7 +248,7 @@ class Task(abc.ABC):
             A dictionary where keys are the names of submetrics and values are
             functions that aggregate a list of metric scores
         """
-        return self._config.aggregation
+        pass
 
     @abc.abstractmethod
     def higher_is_better(self):
@@ -261,7 +257,7 @@ class Task(abc.ABC):
             A dictionary where keys are the names of submetrics and values are
             whether a higher value of the submetric is better
         """
-        return self._config.higher_is_better
+        pass
 
     @utils.positional_deprecated
     def fewshot_context(
@@ -315,6 +311,96 @@ class Task(abc.ABC):
 
         example = self.doc_to_text(doc)
         return labeled_examples + example
+
+
+class ConfigurableTask(Task):
+
+    def __init__(
+        self,
+        data_dir=None,
+        cache_dir=None,
+        download_mode=None,
+        config:dict=None
+    ):
+
+        self._config = TaskConfig(**config)
+        if self._config.dataset_path is not None:
+            self.DATASET_PATH = self._config.dataset_path
+
+        if self._config.dataset_name is not None:
+            self.DATASET_NAME = self._config.dataset_name
+
+        self.download(data_dir, cache_dir, download_mode)
+        self._training_docs = None
+        self._fewshot_docs = None
+
+    def has_training_docs(self):
+        return self._config.has_training_docs
+
+    def has_validation_docs(self):
+        return self._config.has_validation_docs
+
+    def has_test_docs(self):
+        return self._config.has_test_docs
+
+    def training_docs(self):
+        if self._config.training_split is not None:
+            return self.dataset[self._config.training_split]
+
+    def validation_docs(self):
+        if self._config.validation_split is not None:
+            return self.dataset[self._config.validation_split]
+
+    def test_docs(self):
+        if self._config.test_split is not None:
+            return self.dataset[self._config.test_split]
+
+    def _process_doc(self, doc):
+        """
+        Override this to process (detokenize, strip, replace, etc.) individual
+        documents. This can be used in a map over documents of a data split.
+        E.g. `map(self._process_doc, self.dataset["validation"])`
+
+        :return: dict
+            The processed version of the specified `doc`.
+        """
+        return doc
+
+    def doc_to_text(self, doc):
+        _doc_to_text_type = type(self._config.doc_to_text)
+        if type(_doc_to_text_type) is str:
+            return self._config.doc_to_text.format(**doc)
+        elif type(_doc_to_text_type):
+            return self._config.doc_to_text(doc)
+
+    def doc_to_target(self, doc):
+        _doc_to_target_type = type(self._config.doc_to_target)
+        if type(_doc_to_target_type) is str:
+            return self._config.doc_to_target.format(**doc)
+        elif type(_doc_to_target_type):
+            return self._config.doc_to_target(doc)
+
+    def construct_requests(self, doc, ctx, **kwargs):
+        return LoglikelihoodInstance(
+            [ctx + self.doc_to_text(doc), self.doc_to_target(doc)],
+            doc,
+            fewshot_context=ctx,
+            **kwargs
+        )
+
+    def process_results(self, doc, results):
+        
+        result_dict = {}
+        for key, result in zip(self._config.aggregation, results):
+            result_dict[key] = result
+        
+        return result_dict
+
+    def aggregation(self):
+        return self._config.aggregation
+
+    def higher_is_better(self):
+        return self._config.higher_is_better
 
 
 class MultipleChoiceTask(Task):
