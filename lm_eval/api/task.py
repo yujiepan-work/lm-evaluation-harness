@@ -2,6 +2,7 @@ import abc
 from dataclasses import dataclass
 
 import datasets
+import evaluate
 
 import re
 import random
@@ -330,6 +331,18 @@ class ConfigurableTask(Task):
         if self._config.dataset_name is not None:
             self.DATASET_NAME = self._config.dataset_name
 
+        if self._config.metric_list is not None:
+            self._metric_list = {}
+            for metric_name in self._config.metric_list:
+                try:
+                    metric_object = evaluate.load(metric_name)
+                    self._metric_list[metric_name] = metric_object
+                except:
+                    raise Warning(
+                        "{} not found in the evaluate library!".format(metric_name)
+                        "Please check https://huggingface.co/evaluate-metric"
+                    )
+
         self.download(data_dir, cache_dir, download_mode)
         self._training_docs = None
         self._fewshot_docs = None
@@ -390,17 +403,27 @@ class ConfigurableTask(Task):
 
     def process_results(self, doc, results):
         
+        if self._config.gold_alias is not None:
+            gold = doc[self._config.gold_alias]
+        else:
+            gold = self.doc_to_target(doc)
+
         result_dict = {}
-        for key, result in zip(self._config.aggregation, results):
-            result_dict[key] = result
+        for key, result in zip(self._metric_list.keys(), results):
+            result_dict[key] = self._metric_list[key].compute(
+                references=gold,
+                predictions=result,
+            )
         
         return result_dict
 
     def aggregation(self):
-        return self._config.aggregation
+        if self._config.aggregation is not None:
+            return self._config.aggregation
 
     def higher_is_better(self):
-        return self._config.higher_is_better
+        if self._config.higher_is_better is not None:
+            return self._config.higher_is_better
 
 
 class MultipleChoiceTask(Task):
