@@ -23,14 +23,12 @@ class TaskConfig:
     training_split: str = None
     validation_split: str = None
     test_split: str = None
+    doc_to_text: str = None
+    doc_to_target: str = None
     aggregation: dict = None
     higher_is_better: dict = None
+    num_fewshot: int = 0
 
-    def __getitem__(self, key):
-        return getattr(self, key)
-    
-    def __setitem__(self, key, value):
-        return setattr(self, key, value)
 
 class Task(abc.ABC):
     """A task represents an entire benchmark including its dataset, problems,
@@ -339,7 +337,7 @@ class ConfigurableTask(Task):
                     self._metric_list[metric_name] = metric_object
                 except:
                     raise Warning(
-                        "{} not found in the evaluate library!".format(metric_name)
+                        "{} not found in the evaluate library!".format(metric_name),
                         "Please check https://huggingface.co/evaluate-metric"
                     )
 
@@ -380,18 +378,10 @@ class ConfigurableTask(Task):
         return doc
 
     def doc_to_text(self, doc):
-        _doc_to_text_type = type(self._config.doc_to_text)
-        if type(_doc_to_text_type) is str:
-            return self._config.doc_to_text.format(**doc)
-        elif type(_doc_to_text_type):
-            return self._config.doc_to_text(doc)
+        return utils.apply_template(self._config.doc_to_text, doc)
 
     def doc_to_target(self, doc):
-        _doc_to_target_type = type(self._config.doc_to_target)
-        if type(_doc_to_target_type) is str:
-            return self._config.doc_to_target.format(**doc)
-        elif type(_doc_to_target_type):
-            return self._config.doc_to_target(doc)
+        return utils.apply_template(self._config.doc_to_target, doc)
 
     def construct_requests(self, doc, ctx, **kwargs):
         return LoglikelihoodInstance(
@@ -418,12 +408,16 @@ class ConfigurableTask(Task):
         return result_dict
 
     def aggregation(self):
-        if self._config.aggregation is not None:
-            return self._config.aggregation
+
+        aggregation_dict = {}
+        for key in self._metric_list.keys():
+            aggregation_dict[key] = mean
 
     def higher_is_better(self):
-        if self._config.higher_is_better is not None:
-            return self._config.higher_is_better
+
+        higher_is_better_dict = {}
+        for key in self._metric_list.keys():
+            higher_is_better_dict[key] = True
 
 
 class MultipleChoiceTask(Task):
