@@ -1,4 +1,6 @@
 import abc
+from dataclasses import dataclass
+
 import datasets
 
 import re
@@ -8,6 +10,18 @@ from lm_eval.api.metrics import mean, weighted_perplexity, weighted_mean, bits_p
 from lm_eval.api.request import LoglikelihoodInstance, RollingLoglikelihoodInstance
 
 from lm_eval import utils
+
+@dataclass
+class TaskConfig:
+    should_decontaminate: bool = False
+    has_training_docs: bool = None
+    has_validation_docs: bool = None
+    has_test_docs: bool = None
+    training_split: str = None
+    validation_split: str = None
+    test_split: str = None
+    aggregation: dict = None
+    higher_is_better: dict = None
 
 
 class Task(abc.ABC):
@@ -96,38 +110,41 @@ class Task(abc.ABC):
     @abc.abstractmethod
     def has_training_docs(self):
         """Whether the task has a training set"""
-        pass
+        return self._config.has_training_docs
 
     @abc.abstractmethod
     def has_validation_docs(self):
         """Whether the task has a validation set"""
-        pass
+        return self._config.has_validation_docs
 
     @abc.abstractmethod
     def has_test_docs(self):
         """Whether the task has a test set"""
-        pass
+        return self._config.has_test_docs
 
     def training_docs(self):
         """
         :return: Iterable[obj]
             A iterable of any object, that doc_to_text can handle
         """
-        return []
+        if self._config.training_split is not None:
+            return self.dataset[self._config.training_split]
 
     def validation_docs(self):
         """
         :return: Iterable[obj]
             A iterable of any object, that doc_to_text can handle
         """
-        return []
+        if self._config.validation_split is not None:
+            return self.dataset[self._config.validation_split]
 
     def test_docs(self):
         """
         :return: Iterable[obj]
             A iterable of any object, that doc_to_text can handle
         """
-        return []
+        if self._config.test_split is not None:
+            return self.dataset[self._config.test_split]
 
     def _process_doc(self, doc):
         """
@@ -163,11 +180,19 @@ class Task(abc.ABC):
 
     @abc.abstractmethod
     def doc_to_text(self, doc):
-        pass
+        _doc_to_text_type = type(self._config.doc_to_text)
+        if type(_doc_to_text_type) is str:
+            return self._config.doc_to_text.format(**doc)
+        elif type(_doc_to_text_type):
+            return self._config.doc_to_text(doc)
 
     @abc.abstractmethod
     def doc_to_target(self, doc):
-        pass
+        _doc_to_target_type = type(self._config.doc_to_target)
+        if type(_doc_to_target_type) is str:
+            return self._config.doc_to_target.format(**doc)
+        elif type(_doc_to_target_type):
+            return self._config.doc_to_target(doc)
 
     def build_requests(self, docs):
         """Build a set of Requests for a task, and store them in task.instances.
@@ -227,7 +252,7 @@ class Task(abc.ABC):
             A dictionary where keys are the names of submetrics and values are
             functions that aggregate a list of metric scores
         """
-        pass
+        return self._config.aggregation
 
     @abc.abstractmethod
     def higher_is_better(self):
@@ -236,7 +261,7 @@ class Task(abc.ABC):
             A dictionary where keys are the names of submetrics and values are
             whether a higher value of the submetric is better
         """
-        pass
+        return self._config.higher_is_better
 
     @utils.positional_deprecated
     def fewshot_context(
