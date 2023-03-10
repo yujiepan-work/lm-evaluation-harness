@@ -6,7 +6,7 @@ import lm_eval.api.metrics
 import lm_eval.models
 import lm_eval.tasks
 import lm_eval.api
-from lm_eval.utils import positional_deprecated, run_task_tests
+from lm_eval.utils import positional_deprecated, run_task_tests, make_table
 
 
 @positional_deprecated
@@ -158,48 +158,45 @@ def evaluate(
         #         # doc_id: unique id that we can get back to a doc using `docs`
         #         requests_origin[req.request_type].append((i, task_name, doc, doc_id))
         
-        instances = task.build_all_requests()
+        task.build_all_requests()
 
         # aggregate Instances by LM method requested to get output.
-        requests[instances[0].request_type].extend(instances) 
+        requests[task.instances[0].request_type].extend(task.instances) 
     
-    # all responses for each (task, doc)
-    process_res_queue = collections.defaultdict(list)
-
     # execute each type of request
     for reqtype, reqs in requests.items():
-
         print("Running", reqtype, "requests")
-        resps = getattr(lm, reqtype)([req for req in reqs])
-        for x, req in zip(resps, reqs):
-            req.resps = x
+        # create `K` copies of each request `req` based off `K = req.repeats`
+        cloned_reqs = []
+        for req in reqs:
+            cloned_reqs.extend([req] * req.repeats)
+        
+        # run requests through model
+        resps = getattr(lm, reqtype)(cloned_reqs)
 
-        for instance in reqs:
-            process_res_queue[(instance.task_name, instance.doc_idx)].append(instance)
-        # for resp, (i, task_name, doc, doc_id) in zip(resps, requests_origin[reqtype]):
-        #     process_res_queue[(task_name, doc_id)].append((i, resp))
+        # put responses from model into a list of length K for each request.
+        for x, req in zip(resps, cloned_reqs):
+            req.resps.append(x)
 
 
-    # TODO: del model here, apply and instantiate filters here
-    # task.apply_filters()
+    # TODO: del model here, apply and instantiate filters here (idea: allow user to specify device of e.g. reward model separately)
+    for task_name, task in task_dict.items():
+        task.apply_filters()
 
 
     # TODO: 
     vals = collections.defaultdict(list)
 
     # unpack results and sort back in order and return control to Task
-    for (task_name, doc_id), requests in process_res_queue.items():
-        requests.sort(key=lambda x: x.id_)
-        resps = [x.resps for x in requests]
-
-        task = task_dict[task_name]
-        # doc = docs[(task_name, doc_id)]
-        doc = requests[0].doc
-
-        metrics = task.process_results(doc, resps)
-        for metric, value in metrics.items():
-            vals[(task_name, metric)].append(value)
-
+    for task_name, task in task_dict.items():
+        for doc_id, doc in enumerate(task.test_docs() if task.has_test_docs() else task.validation_docs()):
+            # subset instances to only this document id ; sort by id_
+            requests = list(filter(lambda x: x.doc_id == doc_id, task.instances))
+            requests.sort(key=lambda x: x.id_)
+            metrics = task.process_results(doc, [req.filtered_resps["unfiltered"] for req in requests])
+            for metric, value in metrics.items():
+                vals[(task_name, metric)].append(value)
+    
     # aggregate results ; run bootstrap CIs
     for (task_name, metric), items in vals.items():
         task = task_dict[task_name]
@@ -219,36 +216,3 @@ def evaluate(
             results[task_name][metric + "_stderr"] = stderr(items)
 
     return {"results": dict(results), "versions": dict(versions)}
-
-
-def make_table(result_dict):
-    """Generate table of results."""
-    from pytablewriter import MarkdownTableWriter, LatexTableWriter
-
-    md_writer = MarkdownTableWriter()
-    latex_writer = LatexTableWriter()
-    md_writer.headers = ["Task", "Version", "Metric", "Value", "", "Stderr"]
-    latex_writer.headers = ["Task", "Version", "Metric", "Value", "", "Stderr"]
-
-    values = []
-
-    for k, dic in result_dict["results"].items():
-        version = result_dict["versions"][k]
-        for m, v in dic.items():
-            if m.endswith("_stderr"):
-                continue
-
-            if m + "_stderr" in dic:
-                se = dic[m + "_stderr"]
-                values.append([k, version, m, "%.4f" % v, "±", "%.4f" % se])
-            else:
-                values.append([k, version, m, "%.4f" % v, "", ""])
-            k = ""
-            version = ""
-    md_writer.value_matrix = values
-    latex_writer.value_matrix = values
-
-    # todo: make latex table look good
-    # print(latex_writer.dumps())
-
-    return md_writer.dumps()

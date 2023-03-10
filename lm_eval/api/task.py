@@ -8,6 +8,8 @@ from lm_eval.api.instance import LoglikelihoodInstance, RollingLoglikelihoodInst
 from lm_eval.api.metrics import mean, weighted_perplexity, weighted_mean, bits_per_byte
 from lm_eval import utils
 
+from lm_eval.api.filter import Filter
+
 class Task(abc.ABC):
     """A task represents an entire benchmark including its dataset, problems,
     answers, and evaluation methods. See BoolQ for a simple example implementation
@@ -139,6 +141,13 @@ class Task(abc.ABC):
         """
         return doc
 
+    @property
+    def instances(self):
+        """After calling `task.build_all_requests()`, tasks
+        maintain a list of the dataset instances which will be evaluated.
+        """
+        return self._instances
+
     def fewshot_examples(self, k, rnd):
         if self._training_docs is None:
             self._training_docs = list(self.training_docs())
@@ -170,23 +179,24 @@ class Task(abc.ABC):
             assert False, f"Task dataset (path={self.DATASET_PATH}, name={self.DATASET_NAME}) must have valid or test docs!"
 
         instances = []
-        for idx, doc in enumerate(docs):
+        for doc_id, doc in enumerate(docs):
             # sample fewshot context (uses prompt defined in self.doc_to_text())
             fewshot_ctx = self.fewshot_context(doc, self._config["num_fewshot"], rnd=random.Random())
 
             # TODO: hardcoded for now: # of runs on each input to be 1. advanced users should have ability to run model multiple times on same input
-            inst = self.construct_requests(doc=doc, ctx=fewshot_ctx, metadata=(self._config["task_name"], idx, 1))
+            inst = self.construct_requests(doc=doc, ctx=fewshot_ctx, metadata=(self._config["task_name"], doc_id, 2))
 
-            # TODO: this means that e.g. the multiple calls for a given doc for multiple choice get added to this list as separate Instances 
-            # (albeit with shared task_index *AND* req_id)
-            if isinstance(inst, list):
-                instances.extend(inst)
-            else: 
-                instances.append(inst)
+            if not isinstance(inst, list):
+                inst = [inst]
+
+            # inst = inst * self._config["repeats"] # clone requests K times
+
+            # TODO: make sure this is the way we want to handle repeats
+            instances.extend(inst)
+            
 
         self._instances = instances
         assert len(self._instances) != 0, "task.build_requests() did not find any docs!"
-        return self._instances
 
     @abc.abstractmethod
     def construct_requests(self, doc, ctx,  **kwargs):
@@ -239,16 +249,6 @@ class Task(abc.ABC):
             whether a higher value of the submetric is better
         """
         pass
-
-    def fewshot_description(self):
-        import warnings
-
-        warnings.warn(
-            "`fewshot_description` will be removed in futures versions. Pass "
-            "any custom descriptions to the `evaluate` function instead.",
-            DeprecationWarning,
-        )
-        return ""
 
     @utils.positional_deprecated
     def fewshot_context(
@@ -303,6 +303,18 @@ class Task(abc.ABC):
         example = self.doc_to_text(doc)
         return labeled_examples + example
 
+    def apply_filters(self):
+        # TODO: init filters above. also, make sure we have a bare Filter() in the list as an element.
+        filters = [Filter()]
+
+        for f in filters:
+            for inst in self.instances:
+                # apply filter to responses and get filtered responses back, for a given instance
+                filtered = f.apply(inst.resps)
+
+                # add to filtered_resps
+                inst.filtered_resps.update(filtered)
+
 
 class MultipleChoiceTask(Task):
     def doc_to_target(self, doc):
@@ -324,6 +336,7 @@ class MultipleChoiceTask(Task):
         # return lls
 
     def process_results(self, doc, results):
+        results = [res[0] for res in results] # only retain loglikelihoods, discard is_greedy TODO: do we need is_greedy anywhere? 
         gold = doc["gold"]
 
         acc = 1.0 if np.argmax(results) == gold else 0.0

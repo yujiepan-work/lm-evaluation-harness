@@ -13,20 +13,20 @@ class Instance(abc.ABC):
     def __init__(self, doc, arguments=None, id_=None, metadata=("", None, None)):
 
         self.doc = doc # store the document which we're using. this is a dict
-        self.task_name = None
         self._arguments = arguments
 
         # need: task name, doc idx, num. repeats
-        self.task_name, self.doc_idx, self.repeats = metadata
+        self.task_name, self.doc_id, self.repeats = metadata
         # id_ = idx within a doc's requests
         self.id_ = id_
 
         # handle repeats internally. should be able to run K times on exact same input/output pair
         # self.repeats = repeats
         
-        # lists containing: 1) the inputs and targets for each, 2) the outputs from the model, 3) the outputs from the model after applying filtering
-        self.resps = None
-        self.filtered_resps = None
+        # list containing the returns from each call of the model on this particular set of arguments.
+        self.resps = []
+        # filtered_resps should end up a dict, with a different key for each set of filters to apply. calculate results against each key in filtered_resps
+        self.filtered_resps = {}
 
         #TODO: add more info as needed for detailed logging
 

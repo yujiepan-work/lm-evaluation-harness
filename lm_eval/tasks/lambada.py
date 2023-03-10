@@ -62,6 +62,8 @@ class LambadaBase(Task):
         return ll, is_greedy
 
     def process_results(self, doc, results):
+        print(results)
+        # TODO: this ^ is a hack. filters should make it so that we only have one response per request that we score
         results = results[0] # TODO: recheck this. currently a list of [(ll, is_greedy)] is passed in
         ll, is_greedy = results
 
