@@ -1,15 +1,13 @@
-from . import huggingface
-# from . import openai_api
-# from . import textsynth
-from . import test_model
+from . import gpt2
+from . import gpt3
+from . import textsynth
+from . import dummy
 
 MODEL_REGISTRY = {
-    "hf-causal": huggingface.HuggingfaceCausalLM,
-    # "hf-seq2seq"
-    #"textsynth": textsynth.TextSynthLM,
-    "dummy": test_model.DummyLM,
-    # "openai"
-    # "goose"
+    "hf-causal": gpt2.HFLM,
+    "openai": gpt3.GPT3LM,
+    "textsynth": textsynth.TextSynthLM,
+    "dummy": dummy.DummyLM,
 }
 
 

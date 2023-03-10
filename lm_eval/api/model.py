@@ -2,12 +2,15 @@ import abc
 
 from lm_eval import utils
 
-
 class LM(abc.ABC):
     def __init__(self):
-        """Defines the interface that should be implemented by LM subclasses.
+        """Defines the interface that should be implemented by all LM subclasses.
+        LMs are assumed to take text (strings) as input and yield strings as output
+        (inputs/outputs should be tokenization-agnostic.)
 
         """
+
+
     @abc.abstractmethod
     def loglikelihood(self, requests):
         """Compute log-likelihood of generating a continuation from a context.
@@ -64,7 +67,7 @@ class LM(abc.ABC):
         :param requests: list
             A list of strings
             string: str
-                String for which we are computing per-toke  loglikelihood
+                String for which we are computing per-token loglikelihood
         :return: list
             A list of pairs (logprob, isgreedy)
             logprob: float
@@ -99,5 +102,3 @@ class LM(abc.ABC):
         args = utils.simple_parse_args_string(arg_string)
         args2 = {k: v for k, v in additional_config.items() if v is not None}
         return cls(**args, **args2)
-
-

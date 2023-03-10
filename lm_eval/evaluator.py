@@ -5,10 +5,12 @@ import random
 import lm_eval.api.metrics
 import lm_eval.models
 import lm_eval.tasks
+import lm_eval.api
+from lm_eval.utils import positional_deprecated, run_task_tests
 
-from lm_eval.utils import run_task_tests
 
-def cli_evaluate(
+@positional_deprecated
+def simple_evaluate(
     model,
     model_args=None,
     tasks=[],
@@ -19,7 +21,7 @@ def cli_evaluate(
     limit=None,
     bootstrap_iters=100000,
     check_integrity=False,
-    # decontamination_ngrams_path=None,
+    decontamination_ngrams_path=None,
 ):
 
     """Instantiate and evaluate a model on a list of tasks.
@@ -53,8 +55,6 @@ def cli_evaluate(
 
     assert tasks != [], "No tasks specified"
 
-    # run_task_tests(task_list=tasks)
-
     if isinstance(model, str):
         if model_args is None:
             model_args = ""
@@ -62,16 +62,13 @@ def cli_evaluate(
             model_args, {"batch_size": batch_size, "device": device}
         )
     else:
-        assert isinstance(model, lm_eval.base.LM)
+        assert isinstance(model, lm_eval.api.model.LM)
         lm = model
-
-    # if isinstance(tasks, str):
-    #     task_dict = lm_eval.tasks.get_task_dict(tasks)
 
     task_dict = lm_eval.tasks.get_task_dict(tasks)
 
-    # if check_integrity:
-    #     run_task_tests(task_list=tasks)
+    if check_integrity:
+        run_task_tests(task_list=tasks)
 
     results = evaluate(
         lm=lm,
@@ -79,7 +76,7 @@ def cli_evaluate(
         num_fewshot=num_fewshot,
         limit=limit,
         bootstrap_iters=bootstrap_iters,
-        # decontamination_ngrams_path=decontamination_ngrams_path,
+        decontamination_ngrams_path=decontamination_ngrams_path,
     )
 
     # add info about the model and few shot config
@@ -100,6 +97,7 @@ def cli_evaluate(
 decontaminate_suffix = "_decontaminate"
 
 
+@positional_deprecated
 def evaluate(
     lm,
     task_dict,
@@ -114,8 +112,6 @@ def evaluate(
         Language Model
     :param task_dict: dict[str, Task]
         Dictionary of tasks. Tasks will be taken to have name task.EVAL_HARNESS_NAME if defined and type(task).__name__ otherwise.
-    :param provide_description: bool
-        Not implemented, and this option is deprecated and will be removed in a future version in favor of a different description providing method
     :param num_fewshot: int
         Number of examples in few-shot context
     :param limit: int, optional
@@ -126,43 +122,86 @@ def evaluate(
         Dictionary of results
     """
 
-    #### PREPARE DATA FOR MODEL (maybe: asynchronous, if so then do it before model loading) #####
+    decontaminate = decontamination_ngrams_path is not None
 
-    #### Download dataset from HF
+    results = collections.defaultdict(dict)
+    versions = collections.defaultdict(dict)
 
-    #### apply transforms to dataset
-    print(task_dict)
+    requests = collections.defaultdict(list)
+    requests_origin = collections.defaultdict(list)
+
+    docs = {}
+
+    # get lists of each type of request
     for task_name, task in task_dict.items():
+        versions[task_name] = task.VERSION
+        # default to test doc, fall back to val doc if validation unavailable
+        # TODO: the test-fallback-to-val system isn't final, we should revisit it at some point
         if task.has_test_docs():
             task_doc_func = task.test_docs
+            task_set = "test"  # Required for caching in the decontamination
         elif task.has_validation_docs():
+            task_set = "val"  # Required for caching in the decontamination
             task_doc_func = task.validation_docs
         else:
             raise RuntimeError("Task has neither test_docs nor validation_docs")
-        task.build_requests(task_doc_func()) # should run construct_requests() for all docs in desired set. 
-        # stick datapoints in a list by type, sort by ascending len. datapoints should "remember" their origins and store the result
 
-    #### send the data through the model ####
+        # deterministically shuffle docs and chop off the first `limit` because sometimes docs are in some kind of order
+        task_docs = list(task_doc_func())
+        rnd = random.Random()
+        rnd.seed(42)
+        rnd.shuffle(task_docs)
 
-    for task_name, task in task_dict.items(): 
-        getattr(lm, task.requests[0].output_type)(task.requests)
 
-    
-    #### Take responses and apply filtering/"solution selection" TODO: implement this
-    # for task_name, task in task_dict:
-    #     task.apply_filters()
-        
+        for doc_id, doc in enumerate(itertools.islice(task_docs, 0, limit)):
 
-    #### Calculate metrics ####
+            if decontaminate and task.should_decontaminate():
+                docs_for_decontamination[(task_name, task_set)].append(
+                    task.doc_to_decontamination_query(doc)
+                )
+
+            docs[(task_name, doc_id)] = doc
+            ctx = task.fewshot_context(
+                doc=doc, num_fewshot=num_fewshot, rnd=rnd
+            )
+            reqs = task.construct_requests(doc, ctx)
+            if not isinstance(reqs, (list, tuple)):
+                reqs = [reqs]
+            for i, req in enumerate(reqs):
+                requests[req.request_type].append(req)
+                # i: index in requests for a single task instance
+                # doc_id: unique id that we can get back to a doc using `docs`
+                requests_origin[req.request_type].append((i, task_name, doc, doc_id))
+
+    # all responses for each (task, doc)
+    process_res_queue = collections.defaultdict(list)
+
+    # execute each type of request
+    for reqtype, reqs in requests.items():
+
+        print("Running", reqtype, "requests")
+        resps = getattr(lm, reqtype)([req.arguments for req in reqs])
+        resps = [x for x, req in zip(resps, reqs)]
+
+
+        for resp, (i, task_name, doc, doc_id) in zip(resps, requests_origin[reqtype]):
+            process_res_queue[(task_name, doc_id)].append((i, resp))
+
     vals = collections.defaultdict(list)
-    for task_name, task in task_dict.items():
-        for req in task.requests:
-            metrics = task.process_results(req.doc, req.resps) # TODO: this doesn't work for multiple-choice questions yet
-            for metric, value in metrics.items():
-                vals[(task_name, metric)].append(value)
 
-    # aggregate results
-    results = collections.defaultdict(dict)
+    # unpack results and sort back in order and return control to Task
+    for (task_name, doc_id), requests in process_res_queue.items():
+        requests.sort(key=lambda x: x[0])
+        requests = [x[1] for x in requests]
+
+        task = task_dict[task_name]
+        doc = docs[(task_name, doc_id)]
+
+        metrics = task.process_results(doc, requests[0])
+        for metric, value in metrics.items():
+            vals[(task_name, metric)].append(value)
+
+    # aggregate results ; run bootstrap CIs
     for (task_name, metric), items in vals.items():
         task = task_dict[task_name]
         results[task_name][metric] = task.aggregation()[metric](items)
@@ -180,8 +219,7 @@ def evaluate(
         if stderr is not None:
             results[task_name][metric + "_stderr"] = stderr(items)
 
-
-    return {"results": dict(results), "versions": {task_name: task.VERSION for task_name, task in task_dict.items()}}
+    return {"results": dict(results), "versions": dict(versions)}
 
 
 def make_table(result_dict):
