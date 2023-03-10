@@ -56,12 +56,13 @@ class LambadaBase(Task):
     def doc_to_target(self, doc):
         return " " + doc["text"].rsplit(" ", 1)[1]
 
-    def construct_requests(self, doc, ctx):
-        return LoglikelihoodInstance(doc=doc, arguments=(ctx, self.doc_to_target(doc)))
+    def construct_requests(self, doc, ctx, **kwargs):
+        return LoglikelihoodInstance(doc=doc, arguments=(ctx, self.doc_to_target(doc)), **kwargs)
 
         return ll, is_greedy
 
     def process_results(self, doc, results):
+        results = results[0] # TODO: recheck this. currently a list of [(ll, is_greedy)] is passed in
         ll, is_greedy = results
 
         return {"ppl": ll, "acc": int(is_greedy)}

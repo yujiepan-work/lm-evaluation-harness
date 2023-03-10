@@ -1,8 +1,11 @@
 import abc
+import random
 
 import datasets
+import numpy as np
 
 from lm_eval.api.instance import LoglikelihoodInstance, RollingLoglikelihoodInstance
+from lm_eval.api.metrics import mean, weighted_perplexity, weighted_mean, bits_per_byte
 from lm_eval import utils
 
 class Task(abc.ABC):
@@ -22,7 +25,7 @@ class Task(abc.ABC):
     # The name of a subset within `DATASET_PATH`.
     DATASET_NAME: str = None
 
-    def __init__(self, data_dir=None, cache_dir=None, download_mode=None, _config={"num_fewshot": 0}):
+    def __init__(self, data_dir=None, cache_dir=None, download_mode=None, _config=None):
         """
         :param data_dir: str
             Stores the path to a local folder containing the `Task`'s data files.
@@ -172,7 +175,7 @@ class Task(abc.ABC):
             fewshot_ctx = self.fewshot_context(doc, self._config["num_fewshot"], rnd=random.Random())
 
             # TODO: hardcoded for now: # of runs on each input to be 1. advanced users should have ability to run model multiple times on same input
-            inst = self.construct_requests(doc=doc, ctx=fewshot_ctx, doc_idx=idx, repeats=1)
+            inst = self.construct_requests(doc=doc, ctx=fewshot_ctx, metadata=(self._config["task_name"], idx, 1))
 
             # TODO: this means that e.g. the multiple calls for a given doc for multiple choice get added to this list as separate Instances 
             # (albeit with shared task_index *AND* req_id)
@@ -183,9 +186,10 @@ class Task(abc.ABC):
 
         self._instances = instances
         assert len(self._instances) != 0, "task.build_requests() did not find any docs!"
+        return self._instances
 
     @abc.abstractmethod
-    def construct_requests(self, doc, ctx):
+    def construct_requests(self, doc, ctx,  **kwargs):
         """Uses RequestFactory to construct Requests and returns an iterable of
         Requests which will be sent to the LM.
 
@@ -199,6 +203,7 @@ class Task(abc.ABC):
             The index of a document within `self.test_docs()` or `self.validation_docs()`, 
             whichever is the main split used.
         :param repeats: int
+        TODO: update this docstring
             The number of times each instance in a dataset is inferred on. Defaults to 1, 
             can be increased for techniques like majority voting.
         """
@@ -303,9 +308,15 @@ class MultipleChoiceTask(Task):
     def doc_to_target(self, doc):
         return " " + doc["choices"][doc["gold"]]
 
-    def construct_requests(self, doc, ctx):
+    def construct_requests(self, doc, ctx, **kwargs):
         
-        return [LoglikelihoodInstance(doc=doc, arguments=(ctx, " {}".format(choice))) for choice in doc["choices"]]
+        return [LoglikelihoodInstance(
+                doc=doc, 
+                arguments=(ctx, " {}".format(choice)),
+                id_=i,
+                **kwargs,
+            )
+            for i, choice in enumerate(doc["choices"])]
         #lls = [
         #    rf.loglikelihood(ctx, " {}".format(choice))[0] for choice in doc["choices"]
         #]
@@ -350,7 +361,7 @@ class PerplexityTask(Task, abc.ABC):
         return []
 
     def fewshot_context(
-        self, doc, num_fewshot, provide_description=None, rnd=None, description=None
+        self, doc, num_fewshot, rnd=None
     ):
         assert (
             num_fewshot == 0
@@ -358,16 +369,6 @@ class PerplexityTask(Task, abc.ABC):
         assert (
             rnd is not None
         ), "A `random.Random` generator argument must be provided to `rnd`."
-        assert not provide_description, (
-            "The `provide_description` arg will be removed in future versions. To prepend "
-            "a custom description to the context, supply the corresponding string via the "
-            "`description` arg."
-        )
-        if provide_description is not None:
-            # nudge people to not specify it at all
-            print(
-                "WARNING: provide_description is deprecated and will be removed in a future version in favor of description_dict"
-            )
 
         return ""
 

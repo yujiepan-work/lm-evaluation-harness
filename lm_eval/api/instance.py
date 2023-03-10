@@ -10,14 +10,19 @@ class Instance(abc.ABC):
     # all Instance subclasses have an attribute which is the name of the LM() class function they call to get outputs.
     request_type = None
 
-    def __init__(self, doc, arguments=None, doc_idx=None, repeats: int=1):
+    def __init__(self, doc, arguments=None, id_=None, metadata=("", None, None)):
 
         self.doc = doc # store the document which we're using. this is a dict
-        self.doc_idx = doc_idx # index of the doc within valid/test set
         self.task_name = None
         self._arguments = arguments
 
-        self.repeats = repeats
+        # need: task name, doc idx, num. repeats
+        self.task_name, self.doc_idx, self.repeats = metadata
+        # id_ = idx within a doc's requests
+        self.id_ = id_
+
+        # handle repeats internally. should be able to run K times on exact same input/output pair
+        # self.repeats = repeats
         
         # lists containing: 1) the inputs and targets for each, 2) the outputs from the model, 3) the outputs from the model after applying filtering
         self.resps = None
@@ -34,7 +39,7 @@ class LoglikelihoodInstance(Instance):
         super().__init__(*args, **kwargs)
 
     @property
-    def arguments(self):
+    def args(self):
         """
         Returns (context,target) where `context` is the input and `target` is 
         the string to calculate loglikelihood over, conditional on `context` preceding it.
@@ -51,7 +56,7 @@ class RollingLoglikelihoodInstance(Instance):
         super().__init__(*args, **kwargs)
     
     @property
-    def arguments(self):
+    def args(self):
         """
         Returns (string,) where `string` is the string to calculate loglikelihood over
         """
@@ -68,7 +73,7 @@ class GenerationInstance(Instance):
         #TODO: generation/model fwd pass kwargs here and should be passed through arguments as well
 
     @property
-    def arguments(self):
+    def args(self):
         """
         Returns (string, until) where `string` is the input sequence beginning generation and 
         `until` is a string or list of strings corresponding to stop sequences.

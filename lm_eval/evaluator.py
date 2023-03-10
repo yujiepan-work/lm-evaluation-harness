@@ -135,44 +135,34 @@ def evaluate(
     # get lists of each type of request
     for task_name, task in task_dict.items():
         versions[task_name] = task.VERSION
-        # default to test doc, fall back to val doc if validation unavailable
-        # TODO: the test-fallback-to-val system isn't final, we should revisit it at some point
-        if task.has_test_docs():
-            task_doc_func = task.test_docs
-            task_set = "test"  # Required for caching in the decontamination
-        elif task.has_validation_docs():
-            task_set = "val"  # Required for caching in the decontamination
-            task_doc_func = task.validation_docs
-        else:
-            raise RuntimeError("Task has neither test_docs nor validation_docs")
-
+    
         # deterministically shuffle docs and chop off the first `limit` because sometimes docs are in some kind of order
-        task_docs = list(task_doc_func())
-        rnd = random.Random()
-        rnd.seed(42)
-        rnd.shuffle(task_docs)
+        # task_docs = list(task_doc_func())
+        # rnd = random.Random()
+        # rnd.seed(42)
+        # rnd.shuffle(task_docs)
 
 
-        for doc_id, doc in enumerate(itertools.islice(task_docs, 0, limit)):
+        # for doc_id, doc in enumerate(itertools.islice(task_docs, 0, limit)):
 
-            if decontaminate and task.should_decontaminate():
-                docs_for_decontamination[(task_name, task_set)].append(
-                    task.doc_to_decontamination_query(doc)
-                )
+        #     docs[(task_name, doc_id)] = doc
+        #     ctx = task.fewshot_context(
+        #         doc=doc, num_fewshot=num_fewshot, rnd=rnd
+        #     )
+        #     reqs = task.construct_requests(doc, ctx)
+        #     if not isinstance(reqs, (list, tuple)):
+        #         reqs = [reqs]
+        #     for i, req in enumerate(reqs):
+        #         requests[req.request_type].append(req)
+        #         # i: index in requests for a single task instance
+        #         # doc_id: unique id that we can get back to a doc using `docs`
+        #         requests_origin[req.request_type].append((i, task_name, doc, doc_id))
+        
+        instances = task.build_all_requests()
 
-            docs[(task_name, doc_id)] = doc
-            ctx = task.fewshot_context(
-                doc=doc, num_fewshot=num_fewshot, rnd=rnd
-            )
-            reqs = task.construct_requests(doc, ctx)
-            if not isinstance(reqs, (list, tuple)):
-                reqs = [reqs]
-            for i, req in enumerate(reqs):
-                requests[req.request_type].append(req)
-                # i: index in requests for a single task instance
-                # doc_id: unique id that we can get back to a doc using `docs`
-                requests_origin[req.request_type].append((i, task_name, doc, doc_id))
-
+        # aggregate Instances by LM method requested to get output.
+        requests[instances[0].request_type].extend(instances) 
+    
     # all responses for each (task, doc)
     process_res_queue = collections.defaultdict(list)
 
@@ -180,24 +170,33 @@ def evaluate(
     for reqtype, reqs in requests.items():
 
         print("Running", reqtype, "requests")
-        resps = getattr(lm, reqtype)([req.arguments for req in reqs])
-        resps = [x for x, req in zip(resps, reqs)]
+        resps = getattr(lm, reqtype)([req for req in reqs])
+        for x, req in zip(resps, reqs):
+            req.resps = x
+
+        for instance in reqs:
+            process_res_queue[(instance.task_name, instance.doc_idx)].append(instance)
+        # for resp, (i, task_name, doc, doc_id) in zip(resps, requests_origin[reqtype]):
+        #     process_res_queue[(task_name, doc_id)].append((i, resp))
 
 
-        for resp, (i, task_name, doc, doc_id) in zip(resps, requests_origin[reqtype]):
-            process_res_queue[(task_name, doc_id)].append((i, resp))
+    # TODO: del model here, apply and instantiate filters here
+    # task.apply_filters()
 
+
+    # TODO: 
     vals = collections.defaultdict(list)
 
     # unpack results and sort back in order and return control to Task
     for (task_name, doc_id), requests in process_res_queue.items():
-        requests.sort(key=lambda x: x[0])
-        requests = [x[1] for x in requests]
+        requests.sort(key=lambda x: x.id_)
+        resps = [x.resps for x in requests]
 
         task = task_dict[task_name]
-        doc = docs[(task_name, doc_id)]
+        # doc = docs[(task_name, doc_id)]
+        doc = requests[0].doc
 
-        metrics = task.process_results(doc, requests[0])
+        metrics = task.process_results(doc, resps)
         for metric, value in metrics.items():
             vals[(task_name, metric)].append(value)
 
