@@ -362,7 +362,7 @@ def get_task_dict(task_name_list: List[Union[str, dict, api.task.Task]]):
     task_name_from_object_dict = {
         get_task_name_from_object(task_object): task_object
         for task_object in task_name_list
-        if isinstance(task_object, Task)
+        if isinstance(task_object, api.task.Task)
     }
     assert set(task_name_dict.keys()).isdisjoint(set(task_name_from_object_dict.keys()))
     return {
