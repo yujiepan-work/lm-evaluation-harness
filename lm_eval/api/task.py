@@ -7,7 +7,10 @@ import evaluate
 import re
 import random
 
+import numpy as np
+
 from lm_eval.api.instance import LoglikelihoodInstance, RollingLoglikelihoodInstance
+from lm_eval.api.metrics import weighted_perplexity, bits_per_byte, mean
 from lm_eval import utils
 
 
