@@ -355,7 +355,7 @@ class ConfigurableTask(Task):
                 try:
                     metric_object = evaluate.load(metric_name)
                     self._metric_list[metric_name] = metric_object
-                except:
+                except Exception as ex:
                     raise Warning(
                         "{} not found in the evaluate library!".format(metric_name),
                         "Please check https://huggingface.co/evaluate-metric",
