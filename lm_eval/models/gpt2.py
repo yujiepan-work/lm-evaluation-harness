@@ -272,7 +272,6 @@ class HFLM(LM):
         # TODO: implement fully general `until` that handles until that are
         #       multiple tokens or that span multiple tokens correctly
 
-        # TODO: extract to TokenizedLM?
         res = []
 
         def _collate(x):

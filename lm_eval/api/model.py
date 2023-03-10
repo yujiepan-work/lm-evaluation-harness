@@ -67,7 +67,7 @@ class LM(abc.ABC):
         :param requests: list
             A list of strings
             string: str
-                String for which we are computing per-toke  loglikelihood
+                String for which we are computing per-token loglikelihood
         :return: list
             A list of pairs (logprob, isgreedy)
             logprob: float

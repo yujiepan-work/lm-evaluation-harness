@@ -6,7 +6,7 @@ from lm_eval import api
 
 # from . import superglue
 # from . import glue
-# from . import arc
+from . import arc
 # from . import coqa
 # from . import race
 # from . import webqs
@@ -126,8 +126,8 @@ TASK_REGISTRY = {
     # "qa4mre_2012": qa4mre.QA4MRE_2012,
     # "qa4mre_2013": qa4mre.QA4MRE_2013,
     # "triviaqa": triviaqa.TriviaQA,
-    # "arc_easy": arc.ARCEasy,
-    # "arc_challenge": arc.ARCChallenge,
+    "arc_easy": arc.ARCEasy,
+    "arc_challenge": arc.ARCChallenge,
     # # "quac": quac.QuAC, # not implemented yet
     # "logiqa": logiqa.LogiQA,
     # "hellaswag": hellaswag.HellaSwag,

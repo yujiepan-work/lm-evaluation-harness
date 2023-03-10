@@ -1,49 +1,76 @@
-REQUEST_RETURN_LENGTHS = {
-    "loglikelihood": 2,
-    "greedy_until": None,
-    "loglikelihood_rolling": None,
-}
+import abc
+
+class Instance(abc.ABC):
+    """
+    A class used to bind together all necessary information and metadata for 
+    running forward pass of a model on a specific datapoint. 
+
+    """
+
+    # all Instance subclasses have an attribute which is the name of the LM() class function they call to get outputs.
+    request_type = None
+
+    def __init__(self, doc, arguments=None, doc_idx=None, repeats: int=1):
+
+        self.doc = doc # store the document which we're using. this is a dict
+        self.doc_idx = doc_idx # index of the doc within valid/test set
+        self.task_name = None
+        self._arguments = arguments
+
+        self.repeats = repeats
+        
+        # lists containing: 1) the inputs and targets for each, 2) the outputs from the model, 3) the outputs from the model after applying filtering
+        self.resps = None
+        self.filtered_resps = None
+
+        #TODO: add more info as needed for detailed logging
+
+class LoglikelihoodInstance(Instance):
+
+    request_type = "loglikelihood"
+
+    def __init__(self, *args, **kwargs):
+
+        super().__init__(*args, **kwargs)
+
+    @property
+    def arguments(self):
+        """
+        Returns (context,target) where `context` is the input and `target` is 
+        the string to calculate loglikelihood over, conditional on `context` preceding it.
+        """
+        return self._arguments
 
 
-class Request:
-    def __init__(self, request_type, args, index=None):
-        if request_type not in REQUEST_RETURN_LENGTHS.keys():
-            raise NotImplementedError(
-                "The request type {} is not implemented!".format(request_type)
-            )
+class RollingLoglikelihoodInstance(Instance):
 
-        self.request_type = request_type
-        self.args = args
-        self.index = index
+    request_type = "loglikelihood_rolling"
 
-    def __iter__(self):
-        if REQUEST_RETURN_LENGTHS[self.request_type] is None:
-            raise IndexError("This request type does not return multiple arguments!")
-        for i in range(REQUEST_RETURN_LENGTHS[self.request_type]):
-            yield Request(self.request_type, self.args, i)
+    def __init__(self, *args, **kwargs):
 
-    def __getitem__(self, i):
-        if REQUEST_RETURN_LENGTHS[self.request_type] is None:
-            raise IndexError("This request type does not return multiple arguments!")
-        return Request(self.request_type, self.args, i)
+        super().__init__(*args, **kwargs)
+    
+    @property
+    def arguments(self):
+        """
+        Returns (string,) where `string` is the string to calculate loglikelihood over
+        """
+        return self._arguments if isinstance(self._arguments, tuple) else (self.arguments,)
 
-    def __eq__(self, other):
-        return (
-            self.request_type == other.request_type
-            and self.args == other.args
-            and self.index == other.index
-        )
+class GenerationInstance(Instance):
 
-    def __repr__(self):
-        return f"Req_{self.request_type}{self.args}[{self.index}]\n"
+    request_type = "greedy_until"
 
+    def __init__(self, *args, **kwargs):
 
-class RequestFactory:
-    def __getattr__(self, attr):
-        def fn(*args):
-            return Request(attr, args)
+        super().__init__(*args, **kwargs)
 
-        return fn
+        #TODO: generation/model fwd pass kwargs here and should be passed through arguments as well
 
-
-rf = RequestFactory()
+    @property
+    def arguments(self):
+        """
+        Returns (string, until) where `string` is the input sequence beginning generation and 
+        `until` is a string or list of strings corresponding to stop sequences.
+        """
+        return self._arguments
