@@ -57,8 +57,6 @@ def pattern_match(patterns, source_list):
 def main():
     args = parse_args()
 
-    assert not args.provide_description  # not implemented
-
     if args.limit:
         print(
             "WARNING: --limit SHOULD ONLY BE USED FOR TESTING. REAL METRICS SHOULD NOT BE COMPUTED USING LIMIT."
@@ -71,11 +69,6 @@ def main():
 
     print(f"Selected Tasks: {task_names}")
 
-    description_dict = {}
-    if args.description_dict_path:
-        with open(args.description_dict_path, "r") as f:
-            description_dict = json.load(f)
-
     results = evaluator.simple_evaluate(
         model=args.model,
         model_args=args.model_args,
@@ -83,9 +76,7 @@ def main():
         num_fewshot=args.num_fewshot,
         batch_size=args.batch_size,
         device=args.device,
-        no_cache=args.no_cache,
         limit=args.limit,
-        description_dict=description_dict,
         decontamination_ngrams_path=args.decontamination_ngrams_path,
         check_integrity=args.check_integrity,
     )

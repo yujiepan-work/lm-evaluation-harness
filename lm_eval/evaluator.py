@@ -2,10 +2,10 @@ import collections
 import itertools
 import numpy as np
 import random
-import lm_eval.metrics
+import lm_eval.api.metrics
 import lm_eval.models
 import lm_eval.tasks
-import lm_eval.base
+import lm_eval.api
 from lm_eval.utils import positional_deprecated, run_task_tests
 
 
@@ -65,18 +65,8 @@ def simple_evaluate(
             model_args, {"batch_size": batch_size, "device": device}
         )
     else:
-        assert isinstance(model, lm_eval.base.LM)
+        assert isinstance(model, lm_eval.api.model.LM)
         lm = model
-
-    if not no_cache:
-        lm = lm_eval.base.CachingLM(
-            lm,
-            "lm_cache/"
-            + model
-            + "_"
-            + model_args.replace("=", "-").replace(",", "_").replace("/", "-")
-            + ".db",
-        )
 
     task_dict = lm_eval.tasks.get_task_dict(tasks)
 
@@ -284,7 +274,7 @@ def evaluate(
         # hotfix: bleu, chrf, ter seem to be really expensive to bootstrap
         # so we run them less iterations. still looking for a cleaner way to do this
 
-        stderr = lm_eval.metrics.stderr_for_metric(
+        stderr = lm_eval.api.metrics.stderr_for_metric(
             metric=task.aggregation()[real_metric],
             bootstrap_iters=min(bootstrap_iters, 1000)
             if metric in ["bleu", "chrf", "ter"]
