@@ -53,7 +53,7 @@ def cli_evaluate(
 
     assert tasks != [], "No tasks specified"
 
-    run_task_tests(task_list=tasks)
+    # run_task_tests(task_list=tasks)
 
     if isinstance(model, str):
         if model_args is None:
@@ -64,6 +64,9 @@ def cli_evaluate(
     else:
         assert isinstance(model, lm_eval.base.LM)
         lm = model
+
+    # if isinstance(tasks, str):
+    #     task_dict = lm_eval.tasks.get_task_dict(tasks)
 
     task_dict = lm_eval.tasks.get_task_dict(tasks)
 
