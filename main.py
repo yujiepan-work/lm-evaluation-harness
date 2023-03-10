@@ -69,7 +69,7 @@ def main():
         if args.config:
             task_names = []
             for config_files in args.config.split(","):
-                with open(config_files, 'r') as f:
+                with open(config_files, "r") as f:
                     config = yaml.load(f, yaml.Loader)
                 task_names.append(config)
         else:

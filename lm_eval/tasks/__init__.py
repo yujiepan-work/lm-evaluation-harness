@@ -7,6 +7,7 @@ from lm_eval import api
 # from . import superglue
 # from . import glue
 from . import arc
+
 # from . import coqa
 # from . import race
 # from . import webqs
@@ -22,6 +23,7 @@ from . import arc
 # from . import sat
 # from . import arithmetic
 from . import lambada
+
 # from . import piqa
 # from . import prost
 # from . import mc_taco
@@ -344,12 +346,16 @@ def get_task_name_from_config(task_config):
 
 def get_task_dict(task_name_list: List[Union[str, dict, api.task.Task]]):
     task_name_dict = {
-        task_name: get_task(task_name)(config={"num_fewshot": 0}) # TODO: don't hardcode this and figure out a proper config system
+        task_name: get_task(task_name)(
+            config={"num_fewshot": 0}
+        )  # TODO: don't hardcode this and figure out a proper config system
         for task_name in task_name_list
         if isinstance(task_name, str)
     }
     task_name_from_config_dict = {
-        get_task_name_from_config(task_config): api.task.ConfigurableTask(config=task_config)
+        get_task_name_from_config(task_config): api.task.ConfigurableTask(
+            config=task_config
+        )
         for task_config in task_name_list
         if isinstance(task_config, dict)
     }
@@ -362,5 +368,5 @@ def get_task_dict(task_name_list: List[Union[str, dict, api.task.Task]]):
     return {
         **task_name_dict,
         **task_name_from_config_dict,
-        **task_name_from_object_dict
+        **task_name_from_object_dict,
     }
