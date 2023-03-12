@@ -3,13 +3,11 @@ import re
 from lm_eval.api.filter import Filter
 
 
-class ExtractRegexFilter(Filter):
+class RegexFilter(Filter):
     """
 
 
     """
-
-    name = "extract_regex"
 
     def __init__(self, regex=None, fallback=None)
         """

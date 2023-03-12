@@ -193,7 +193,7 @@ def evaluate(
             # subset instances to only this document id ; sort by id_
             requests = list(filter(lambda x: x.doc_id == doc_id, task.instances))
             requests.sort(key=lambda x: x.id_)
-            metrics = task.process_results(doc, [req.filtered_resps["unfiltered"] for req in requests])
+            metrics = task.process_results(doc, [req.filtered_resps["none"] for req in requests])
             for metric, value in metrics.items():
                 vals[(task_name, metric)].append(value)
     

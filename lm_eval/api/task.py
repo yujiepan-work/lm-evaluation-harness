@@ -8,7 +8,7 @@ from lm_eval.api.instance import LoglikelihoodInstance, RollingLoglikelihoodInst
 from lm_eval.api.metrics import mean, weighted_perplexity, weighted_mean, bits_per_byte
 from lm_eval import utils
 
-from lm_eval.api.filter import Filter
+from lm_eval.filters import build_filter_ensemble
 
 class Task(abc.ABC):
     """A task represents an entire benchmark including its dataset, problems,
@@ -55,7 +55,12 @@ class Task(abc.ABC):
         self._fewshot_docs = None    
         self._instances = None
 
-        self._config = _config
+        self._config = _config if _config else {}
+
+        self._filters = []
+        for name, components in self._config.get("filters", [["none", ["take_first"]]]):
+            filter_pipeline = build_filter_ensemble(name, components)
+            self._filters.append(filter_pipeline)
 
     def download(self, data_dir=None, cache_dir=None, download_mode=None):
         """Downloads and returns the task dataset.
@@ -304,16 +309,9 @@ class Task(abc.ABC):
         return labeled_examples + example
 
     def apply_filters(self):
-        # TODO: init filters above. also, make sure we have a bare Filter() in the list as an element.
-        filters = [Filter()]
 
-        for f in filters:
-            for inst in self.instances:
-                # apply filter to responses and get filtered responses back, for a given instance
-                filtered = f.apply(inst.resps)
-
-                # add to filtered_resps
-                inst.filtered_resps.update(filtered)
+        for f in self._filters:
+            f.apply(self._instances)
 
 
 class MultipleChoiceTask(Task):
