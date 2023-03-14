@@ -346,9 +346,7 @@ def get_task_name_from_config(task_config):
 
 def get_task_dict(task_name_list: List[Union[str, dict, api.task.Task]]):
     task_name_dict = {
-        task_name: get_task(task_name)(
-            config={"num_fewshot": 0}
-        )  # TODO: don't hardcode this and figure out a proper config system
+        task_name: get_task(task_name)(config={"num_fewshot": 0, "task_name": task_name})
         for task_name in task_name_list
         if isinstance(task_name, str)
     }

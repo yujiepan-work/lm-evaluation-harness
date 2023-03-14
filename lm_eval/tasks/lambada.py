@@ -32,6 +32,8 @@ _CITATION = """
 class LambadaBase(Task):
     VERSION = None
 
+    OUTPUT_TYPE = "loglikelihood"
+
     def training_docs(self):
         if self.has_training_docs():
             return self.dataset["train"]
@@ -56,10 +58,12 @@ class LambadaBase(Task):
     def doc_to_target(self, doc):
         return " " + doc["text"].rsplit(" ", 1)[1]
 
-    def construct_requests(self, doc, ctx):
-        return LoglikelihoodInstance(doc=doc, arguments=(ctx, self.doc_to_target(doc)))
+    def construct_requests(self, doc, ctx, **kwargs):
+        return LoglikelihoodInstance(doc=doc, arguments=(ctx, self.doc_to_target(doc)), **kwargs)
 
     def process_results(self, doc, results):
+        # TODO: this ^ is a hack. filters should make it so that we only have one response per request that we score
+        results = results[0] # TODO: recheck this. currently a list of [(ll, is_greedy)] is passed in
         ll, is_greedy = results
 
         return {"ppl": ll, "acc": int(is_greedy)}
@@ -74,7 +78,7 @@ class LambadaBase(Task):
 class LambadaStandard(LambadaBase):
     """The LAMBADA task using the standard original LAMBADA dataset."""
 
-    VERSION = 0
+    VERSION = "2.0"
     DATASET_PATH = "lambada"
 
     def has_training_docs(self):
@@ -94,7 +98,7 @@ class LambadaOpenAI(LambadaBase):
     Reference: https://github.com/openai/gpt-2/issues/131#issuecomment-497136199
     """
 
-    VERSION = 0
+    VERSION = "2.0"
     DATASET_PATH = "EleutherAI/lambada_openai"
 
     def has_training_docs(self):

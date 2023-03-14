@@ -114,7 +114,7 @@ class HFLM(LM):
 
     def loglikelihood(self, requests):
         new_reqs = []
-        for context, continuation in requests:
+        for context, continuation in [req.args for req in requests]:
             if context == "":
                 # end of text as context
                 context_enc = [self.eot_token_id]
@@ -132,7 +132,7 @@ class HFLM(LM):
         # TODO: automatic batch size detection for vectorization
 
         loglikelihoods = []
-        for (string,) in tqdm(requests):
+        for (string,) in tqdm([req.args for req in requests]):
             rolling_token_windows = list(
                 map(
                     utils.make_disjoint_window,
@@ -278,7 +278,7 @@ class HFLM(LM):
             toks = self.tok_encode(x[0])
             return len(toks), x[0]
 
-        re_ord = utils.Reorderer(requests, _collate)
+        re_ord = utils.Reorderer([req.args for req in requests], _collate)
 
         for context, until in tqdm(re_ord.get_reordered()):
             if isinstance(until, str):

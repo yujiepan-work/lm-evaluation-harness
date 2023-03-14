@@ -1,17 +1,18 @@
 import abc
 from dataclasses import dataclass
 
-import datasets
-import evaluate
-
 import re
+import evaluate
 import random
 
+import datasets
 import numpy as np
 
 from lm_eval.api.instance import LoglikelihoodInstance, RollingLoglikelihoodInstance
-from lm_eval.api.metrics import weighted_perplexity, bits_per_byte, mean
+from lm_eval.api.metrics import mean, weighted_perplexity, weighted_mean, bits_per_byte
 from lm_eval import utils
+
+from lm_eval.filters import build_filter_ensemble
 
 
 @dataclass
@@ -34,6 +35,7 @@ class TaskConfig:
     gold_alias: str = None
 
 
+
 class Task(abc.ABC):
     """A task represents an entire benchmark including its dataset, problems,
     answers, and evaluation methods. See BoolQ for a simple example implementation
@@ -51,6 +53,7 @@ class Task(abc.ABC):
     # The name of a subset within `DATASET_PATH`.
     DATASET_NAME: str = None
 
+    OUTPUT_TYPE: str = None
     def __init__(
         self,
         data_dir=None,
@@ -85,7 +88,12 @@ class Task(abc.ABC):
         self._fewshot_docs = None
         self._instances = None
 
-        self._config = config
+        self._config = config if config else {}
+
+        self._filters = []
+        for name, components in self._config.get("filters", [["none", ["take_first"]]]):
+            filter_pipeline = build_filter_ensemble(name, components)
+            self._filters.append(filter_pipeline)
 
     def download(self, data_dir=None, cache_dir=None, download_mode=None):
         """Downloads and returns the task dataset.
@@ -171,6 +179,13 @@ class Task(abc.ABC):
         """
         return doc
 
+    @property
+    def instances(self):
+        """After calling `task.build_all_requests()`, tasks
+        maintain a list of the dataset instances which will be evaluated.
+        """
+        return self._instances
+
     def fewshot_examples(self, k, rnd):
         if self._training_docs is None:
             self._training_docs = list(self.training_docs())
@@ -203,29 +218,29 @@ class Task(abc.ABC):
             ), f"Task dataset (path={self.DATASET_PATH}, name={self.DATASET_NAME}) must have valid or test docs!"
 
         instances = []
-        for idx, doc in enumerate(docs):
+        for doc_id, doc in enumerate(docs):
             # sample fewshot context (uses prompt defined in self.doc_to_text())
             fewshot_ctx = self.fewshot_context(
                 doc, self._config["num_fewshot"], rnd=random.Random()
             )
 
             # TODO: hardcoded for now: # of runs on each input to be 1. advanced users should have ability to run model multiple times on same input
-            inst = self.construct_requests(
-                doc=doc, ctx=fewshot_ctx, doc_idx=idx, repeats=1
-            )
+            inst = self.construct_requests(doc=doc, ctx=fewshot_ctx, metadata=(self._config["task_name"], doc_id, 2))
 
-            # TODO: this means that e.g. the multiple calls for a given doc for multiple choice get added to this list as separate Instances
-            # (albeit with shared task_index *AND* req_id)
-            if isinstance(inst, list):
-                instances.extend(inst)
-            else:
-                instances.append(inst)
+            if not isinstance(inst, list):
+                inst = [inst]
+
+            # inst = inst * self._config["repeats"] # clone requests K times
+
+            # TODO: make sure this is the way we want to handle repeats
+            instances.extend(inst)
+            
 
         self._instances = instances
         assert len(self._instances) != 0, "task.build_requests() did not find any docs!"
 
     @abc.abstractmethod
-    def construct_requests(self, doc, ctx):
+    def construct_requests(self, doc, ctx,  **kwargs):
         """Uses RequestFactory to construct Requests and returns an iterable of
         Requests which will be sent to the LM.
 
@@ -239,7 +254,8 @@ class Task(abc.ABC):
             The index of a document within `self.test_docs()` or `self.validation_docs()`,
             whichever is the main split used.
         :param repeats: int
-            The number of times each instance in a dataset is inferred on. Defaults to 1,
+        TODO: update this docstring
+            The number of times each instance in a dataset is inferred on. Defaults to 1, 
             can be increased for techniques like majority voting.
         """
         pass
@@ -274,16 +290,6 @@ class Task(abc.ABC):
             whether a higher value of the submetric is better
         """
         pass
-
-    def fewshot_description(self):
-        import warnings
-
-        warnings.warn(
-            "`fewshot_description` will be removed in futures versions. Pass "
-            "any custom descriptions to the `evaluate` function instead.",
-            DeprecationWarning,
-        )
-        return ""
 
     @utils.positional_deprecated
     def fewshot_context(self, doc, num_fewshot, rnd=None):
@@ -335,6 +341,11 @@ class Task(abc.ABC):
 
         example = self.doc_to_text(doc)
         return labeled_examples + example
+
+    def apply_filters(self):
+
+        for f in self._filters:
+            f.apply(self._instances)
 
 
 class ConfigurableTask(Task):
@@ -437,22 +448,29 @@ class ConfigurableTask(Task):
 
 
 class MultipleChoiceTask(Task):
+
+    OUTPUT_TYPE: str = "loglikelihood"
+
     def doc_to_target(self, doc):
         return " " + doc["choices"][doc["gold"]]
 
-    def construct_requests(self, doc, ctx):
-
-        return [
-            LoglikelihoodInstance(doc=doc, arguments=(ctx, " {}".format(choice)))
-            for choice in doc["choices"]
-        ]
-        # lls = [
+    def construct_requests(self, doc, ctx, **kwargs):
+        
+        return [LoglikelihoodInstance(
+                doc=doc, 
+                arguments=(ctx, " {}".format(choice)),
+                id_=i,
+                **kwargs,
+            )
+            for i, choice in enumerate(doc["choices"])]
+        #lls = [
         #    rf.loglikelihood(ctx, " {}".format(choice))[0] for choice in doc["choices"]
         # ]
 
         # return lls
 
     def process_results(self, doc, results):
+        results = [res[0] for res in results] # only retain loglikelihoods, discard is_greedy TODO: do we need is_greedy anywhere? 
         gold = doc["gold"]
 
         acc = 1.0 if np.argmax(results) == gold else 0.0
@@ -478,6 +496,9 @@ class MultipleChoiceTask(Task):
 
 
 class PerplexityTask(Task, abc.ABC):
+
+    OUTPUT_TYPE = "loglikelihood_rolling"
+
     def should_decontaminate(self):
         """Whether this task supports decontamination against model training set."""
         return True
@@ -490,7 +511,7 @@ class PerplexityTask(Task, abc.ABC):
         return []
 
     def fewshot_context(
-        self, doc, num_fewshot, provide_description=None, rnd=None, description=None
+        self, doc, num_fewshot, rnd=None
     ):
         assert (
             num_fewshot == 0
@@ -498,16 +519,6 @@ class PerplexityTask(Task, abc.ABC):
         assert (
             rnd is not None
         ), "A `random.Random` generator argument must be provided to `rnd`."
-        assert not provide_description, (
-            "The `provide_description` arg will be removed in future versions. To prepend "
-            "a custom description to the context, supply the corresponding string via the "
-            "`description` arg."
-        )
-        if provide_description is not None:
-            # nudge people to not specify it at all
-            print(
-                "WARNING: provide_description is deprecated and will be removed in a future version in favor of description_dict"
-            )
 
         return ""
 
