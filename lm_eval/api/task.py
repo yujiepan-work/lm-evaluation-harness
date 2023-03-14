@@ -8,7 +8,7 @@ import random
 import datasets
 import numpy as np
 
-from lm_eval.api.instance import LoglikelihoodInstance, RollingLoglikelihoodInstance
+from lm_eval.api.instance import LoglikelihoodInstance, RollingLoglikelihoodInstance, GenerationInstance
 from lm_eval.api.metrics import mean, weighted_perplexity, weighted_mean, bits_per_byte
 from lm_eval import utils
 
@@ -17,6 +17,8 @@ from lm_eval.filters import build_filter_ensemble
 
 @dataclass
 class TaskConfig:
+
+    task_name: str = None
     dataset_path: str = None
     dataset_name: str = None
     should_decontaminate: bool = False
@@ -34,6 +36,8 @@ class TaskConfig:
     metric_list: str = None
     gold_alias: str = None
 
+    def __getitem__(self, item):
+        return getattr(self, item)
 
 
 class Task(abc.ABC):
@@ -46,6 +50,7 @@ class Task(abc.ABC):
         {"question": ..., question, answer)
     """
 
+    VERSION = None
     # The name of the `Task` benchmark as denoted in the HuggingFace datasets Hub
     # or a path to a custom `datasets` loading script.
     DATASET_PATH: str = None
@@ -416,7 +421,7 @@ class ConfigurableTask(Task):
 
     def construct_requests(self, doc, ctx, **kwargs):
 
-        return RollingLoglikelihoodInstance(doc=doc, ctx=ctx)
+        return GenerationInstance(doc=doc, ctx=ctx)
 
     def process_results(self, doc, results):
 
