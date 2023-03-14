@@ -142,27 +142,12 @@ def evaluate(
         # rnd.seed(42)
         # rnd.shuffle(task_docs)
 
-
         # for doc_id, doc in enumerate(itertools.islice(task_docs, 0, limit)):
-
-        #     docs[(task_name, doc_id)] = doc
-        #     ctx = task.fewshot_context(
-        #         doc=doc, num_fewshot=num_fewshot, rnd=rnd
-        #     )
-        #     reqs = task.construct_requests(doc, ctx)
-        #     if not isinstance(reqs, (list, tuple)):
-        #         reqs = [reqs]
-        #     for i, req in enumerate(reqs):
-        #         requests[req.request_type].append(req)
-        #         # i: index in requests for a single task instance
-        #         # doc_id: unique id that we can get back to a doc using `docs`
-        #         requests_origin[req.request_type].append((i, task_name, doc, doc_id))
-        
         task.build_all_requests()
-
         # aggregate Instances by LM method requested to get output.
-        requests[task.instances[0].request_type].extend(task.instances) 
+        requests[task.OUTPUT_TYPE].extend(task.instances) 
     
+    ### Run LM on inputs, get all outputs ###
     # execute each type of request
     for reqtype, reqs in requests.items():
         print("Running", reqtype, "requests")
@@ -178,29 +163,35 @@ def evaluate(
         for x, req in zip(resps, cloned_reqs):
             req.resps.append(x)
 
-
-    # TODO: del model here, apply and instantiate filters here (idea: allow user to specify device of e.g. reward model separately)
+    ### Postprocess outputs ###
+    # TODO: del model here, maybe () (idea: allow user to specify device of e.g. reward model separately)
     for task_name, task in task_dict.items():
         task.apply_filters()
 
 
-    # TODO: 
+    ### Collect values of metrics on all datapoints ###
+    # TODO: make metric configurable, add metric registry 
     vals = collections.defaultdict(list)
 
     # unpack results and sort back in order and return control to Task
     for task_name, task in task_dict.items():
-        for doc_id, doc in enumerate(task.test_docs() if task.has_test_docs() else task.validation_docs()):
-            # subset instances to only this document id ; sort by id_
-            requests = list(filter(lambda x: x.doc_id == doc_id, task.instances))
-            requests.sort(key=lambda x: x.id_)
-            metrics = task.process_results(doc, [req.filtered_resps["none"] for req in requests])
-            for metric, value in metrics.items():
-                vals[(task_name, metric)].append(value)
-    
+        # calculate values for each filter setup (TODO: make getting list of keys cleaner)
+        # TODO: make it possible to use a different metric per key
+        for key in task.instances[0].filtered_resps.keys():
+            for doc_id, doc in enumerate(task.test_docs() if task.has_test_docs() else task.validation_docs()):
+                # subset instances to only this document id ; sort by id_
+                requests = list(filter(lambda x: x.doc_id == doc_id, task.instances))
+                requests.sort(key=lambda x: x.id_)
+                metrics = task.process_results(doc, [req.filtered_resps[key] for req in requests])
+                for metric, value in metrics.items():
+                    vals[(task_name, key, metric)].append(value)
+        
+
+    ### Aggregate results over all datapoints ###
     # aggregate results ; run bootstrap CIs
-    for (task_name, metric), items in vals.items():
+    for (task_name, key, metric), items in vals.items():
         task = task_dict[task_name]
-        results[task_name][metric] = task.aggregation()[metric](items)
+        results[task_name + " filter= " + key][metric] = task.aggregation()[metric](items)
 
         # hotfix: bleu, chrf, ter seem to be really expensive to bootstrap
         # so we run them less iterations. still looking for a cleaner way to do this
@@ -213,6 +204,6 @@ def evaluate(
         )
 
         if stderr is not None:
-            results[task_name][metric + "_stderr"] = stderr(items)
+            results[task_name + " filter= " + key][metric + "_stderr"] = stderr(items)
 
     return {"results": dict(results), "versions": dict(versions)}

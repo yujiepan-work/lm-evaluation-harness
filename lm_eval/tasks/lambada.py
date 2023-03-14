@@ -32,6 +32,8 @@ _CITATION = """
 class LambadaBase(Task):
     VERSION = None
 
+    OUTPUT_TYPE = "loglikelihood"
+
     def training_docs(self):
         if self.has_training_docs():
             return self.dataset["train"]
@@ -62,7 +64,6 @@ class LambadaBase(Task):
         return ll, is_greedy
 
     def process_results(self, doc, results):
-        print(results)
         # TODO: this ^ is a hack. filters should make it so that we only have one response per request that we score
         results = results[0] # TODO: recheck this. currently a list of [(ll, is_greedy)] is passed in
         ll, is_greedy = results
@@ -79,7 +80,7 @@ class LambadaBase(Task):
 class LambadaStandard(LambadaBase):
     """The LAMBADA task using the standard original LAMBADA dataset."""
 
-    VERSION = 0
+    VERSION = "2.0"
     DATASET_PATH = "lambada"
 
     def has_training_docs(self):
@@ -99,7 +100,7 @@ class LambadaOpenAI(LambadaBase):
     Reference: https://github.com/openai/gpt-2/issues/131#issuecomment-497136199
     """
 
-    VERSION = 0
+    VERSION = "2.0"
     DATASET_PATH = "EleutherAI/lambada_openai"
 
     def has_training_docs(self):

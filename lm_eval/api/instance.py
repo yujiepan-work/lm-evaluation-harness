@@ -30,6 +30,9 @@ class Instance(abc.ABC):
 
         #TODO: add more info as needed for detailed logging
 
+    def __repr__(self):
+        return f"Req_{self.request_type}{self.args}{self.id_}"
+
 class LoglikelihoodInstance(Instance):
 
     request_type = "loglikelihood"

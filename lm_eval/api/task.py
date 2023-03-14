@@ -27,6 +27,9 @@ class Task(abc.ABC):
     # The name of a subset within `DATASET_PATH`.
     DATASET_NAME: str = None
 
+    # the type of model output used for a task. "greedy_until", "loglikelihood", or "loglikelihood_rolling".
+    OUTPUT_TYPE: str = None
+
     def __init__(self, data_dir=None, cache_dir=None, download_mode=None, _config=None):
         """
         :param data_dir: str
@@ -315,6 +318,9 @@ class Task(abc.ABC):
 
 
 class MultipleChoiceTask(Task):
+
+    OUTPUT_TYPE: str = "loglikelihood"
+
     def doc_to_target(self, doc):
         return " " + doc["choices"][doc["gold"]]
 
@@ -360,6 +366,9 @@ class MultipleChoiceTask(Task):
 
 
 class PerplexityTask(Task, abc.ABC):
+
+    OUTPUT_TYPE = "loglikelihood_rolling"
+
     def should_decontaminate(self):
         """Whether this task supports decontamination against model training set."""
         return True

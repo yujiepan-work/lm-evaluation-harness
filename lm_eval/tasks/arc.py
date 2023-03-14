@@ -13,6 +13,7 @@ a co-occurrence method fail to answer correctly) and an Easy Set of 5,197 questi
 Homepage: https://allenai.org/data/arc
 """
 from lm_eval.api.task import MultipleChoiceTask
+from lm_eval.prompts import get_prompt
 
 
 _CITATION = """
@@ -27,9 +28,11 @@ _CITATION = """
 
 
 class ARCEasy(MultipleChoiceTask):
-    VERSION = 0
+    VERSION = "2.0"
     DATASET_PATH = "ai2_arc"
     DATASET_NAME = "ARC-Easy"
+
+    OUTPUT_TYPE = "loglikelihood"
 
     def has_training_docs(self):
         return True
@@ -58,7 +61,7 @@ class ARCEasy(MultipleChoiceTask):
         doc["answerKey"] = num_to_letter.get(doc["answerKey"], doc["answerKey"])
         out_doc = {
             "id": doc["id"],
-            "query": "Question: " + doc["question"] + "\nAnswer:",
+            "query": get_prompt("multiple-choice:question-newline-answer").format(**doc),
             "choices": doc["choices"]["text"],
             "gold": ["A", "B", "C", "D", "E"].index(doc["answerKey"]),
         }
