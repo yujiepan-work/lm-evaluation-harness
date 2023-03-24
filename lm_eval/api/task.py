@@ -16,7 +16,7 @@ from lm_eval.filters import build_filter_ensemble
 
 
 @dataclass
-class TaskConfig:
+class TaskConfig(dict):
 
     task_name: str = None
     dataset_path: str = None
@@ -354,6 +354,9 @@ class Task(abc.ABC):
 
 
 class ConfigurableTask(Task):
+
+    OUTPUT_TYPE: str = "greedy_until"
+
     def __init__(
         self, data_dir=None, cache_dir=None, download_mode=None, config: dict = None
     ):
@@ -380,6 +383,11 @@ class ConfigurableTask(Task):
         self.download(data_dir, cache_dir, download_mode)
         self._training_docs = None
         self._fewshot_docs = None
+
+        self._filters = []
+        for name, components in self._config.get("filters", [["none", ["take_first"]]]):
+            filter_pipeline = build_filter_ensemble(name, components)
+            self._filters.append(filter_pipeline)
 
     def has_training_docs(self):
         return self._config.has_training_docs
@@ -421,7 +429,8 @@ class ConfigurableTask(Task):
 
     def construct_requests(self, doc, ctx, **kwargs):
 
-        return GenerationInstance(doc=doc, ctx=ctx)
+        if self.OUTPUT_TYPE == "greedy_until":
+            return GenerationInstance(doc=doc, arguments=(ctx, "\n\n"), **kwargs)
 
     def process_results(self, doc, results):
 
@@ -430,6 +439,7 @@ class ConfigurableTask(Task):
         else:
             gold = self.doc_to_target(doc)
 
+        print("gold - {}, prediction - {}".format(gold, results))
         result_dict = {}
         for key, result in zip(self._metric_list.keys(), results):
             result_dict[key] = self._metric_list[key].compute(
