@@ -400,15 +400,15 @@ class ConfigurableTask(Task):
 
     def training_docs(self):
         if self._config.training_split is not None:
-            return self.dataset[self._config.training_split]
+            return self.dataset[self._config.training_split].select(list(range(10)))
 
     def validation_docs(self):
         if self._config.validation_split is not None:
-            return self.dataset[self._config.validation_split]
+            return self.dataset[self._config.validation_split].select(list(range(10)))
 
     def test_docs(self):
         if self._config.test_split is not None:
-            return self.dataset[self._config.test_split]
+            return self.dataset[self._config.test_split].select(list(range(10)))
 
     def _process_doc(self, doc):
         """
