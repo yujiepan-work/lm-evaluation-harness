@@ -71,6 +71,13 @@ def main():
             for config_files in args.config.split(","):
                 with open(config_files, "r") as f:
                     config = yaml.load(f, yaml.Loader)
+
+                if args.num_fewshot != 0:
+                    config["num_fewshot"] = args.num_fewshot
+
+                if args.batch_size != None:
+                    config["batch_size"] = args.batch_size
+
                 task_names.append(config)
         else:
             task_names = tasks.ALL_TASKS
