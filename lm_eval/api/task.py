@@ -400,15 +400,15 @@ class ConfigurableTask(Task):
 
     def training_docs(self):
         if self._config.training_split is not None:
-            return self.dataset[self._config.training_split].select(list(range(10)))
+            return self.dataset[self._config.training_split] #.select(list(range(10)))
 
     def validation_docs(self):
         if self._config.validation_split is not None:
-            return self.dataset[self._config.validation_split].select(list(range(10)))
+            return self.dataset[self._config.validation_split] #.select(list(range(10)))
 
     def test_docs(self):
         if self._config.test_split is not None:
-            return self.dataset[self._config.test_split].select(list(range(10)))
+            return self.dataset[self._config.test_split] #.select(list(range(10)))
 
     def _process_doc(self, doc):
         """
@@ -439,13 +439,14 @@ class ConfigurableTask(Task):
         else:
             gold = self.doc_to_target(doc)
 
-        print("gold - {}, prediction - {}".format(gold, results))
         result_dict = {}
         for key, result in zip(self._metric_list.keys(), results):
-            result_dict[key] = self._metric_list[key].compute(
-                references=gold,
-                predictions=result,
+            _dict = self._metric_list[key].compute(
+                references=[gold],
+                predictions=[result],
             )
+
+            result_dict[key] = _dict[key]
 
         return result_dict
 
@@ -455,11 +456,15 @@ class ConfigurableTask(Task):
         for key in self._metric_list.keys():
             aggregation_dict[key] = mean
 
+        return aggregation_dict
+
     def higher_is_better(self):
 
         higher_is_better_dict = {}
         for key in self._metric_list.keys():
             higher_is_better_dict[key] = True
+        
+        return higher_is_better_dict
 
 
 class MultipleChoiceTask(Task):
