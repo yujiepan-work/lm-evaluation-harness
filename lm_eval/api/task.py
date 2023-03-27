@@ -35,6 +35,7 @@ class TaskConfig(dict):
     num_fewshot: int = 0
     metric_list: str = None
     gold_alias: str = None
+    output_type: str = "greedy_until"
 
     def __getitem__(self, item):
         return getattr(self, item)
@@ -355,7 +356,7 @@ class Task(abc.ABC):
 
 class ConfigurableTask(Task):
 
-    OUTPUT_TYPE: str = "greedy_until"
+    VERSION = "0.0"
 
     def __init__(
         self, data_dir=None, cache_dir=None, download_mode=None, config: dict = None
@@ -379,6 +380,8 @@ class ConfigurableTask(Task):
                         "{} not found in the evaluate library!".format(metric_name),
                         "Please check https://huggingface.co/evaluate-metric",
                     )
+
+        self.OUTPUT_TYPE == self._config.output_type
 
         self.download(data_dir, cache_dir, download_mode)
         self._training_docs = None
