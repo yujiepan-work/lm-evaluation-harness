@@ -61,6 +61,8 @@ class LambadaBase(Task):
     def construct_requests(self, doc, ctx, **kwargs):
         return LoglikelihoodInstance(doc=doc, arguments=(ctx, self.doc_to_target(doc)), **kwargs)
 
+        return ll, is_greedy
+
     def process_results(self, doc, results):
         # TODO: this ^ is a hack. filters should make it so that we only have one response per request that we score
         results = results[0] # TODO: recheck this. currently a list of [(ll, is_greedy)] is passed in
