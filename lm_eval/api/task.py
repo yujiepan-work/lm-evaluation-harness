@@ -357,6 +357,7 @@ class Task(abc.ABC):
 class ConfigurableTask(Task):
 
     VERSION = "0.0"
+    OUTPUT_TYPE = "greedy_until"
 
     def __init__(
         self, data_dir=None, cache_dir=None, download_mode=None, config: dict = None
@@ -381,7 +382,7 @@ class ConfigurableTask(Task):
                         "Please check https://huggingface.co/evaluate-metric",
                     )
 
-        self.OUTPUT_TYPE == self._config.output_type
+        # self.OUTPUT_TYPE == self._config.output_type
 
         self.download(data_dir, cache_dir, download_mode)
         self._training_docs = None
@@ -403,15 +404,15 @@ class ConfigurableTask(Task):
 
     def training_docs(self):
         if self._config.training_split is not None:
-            return self.dataset[self._config.training_split] #.select(list(range(10)))
+            return self.dataset[self._config.training_split]
 
     def validation_docs(self):
         if self._config.validation_split is not None:
-            return self.dataset[self._config.validation_split] #.select(list(range(10)))
+            return self.dataset[self._config.validation_split]
 
     def test_docs(self):
         if self._config.test_split is not None:
-            return self.dataset[self._config.test_split] #.select(list(range(10)))
+            return self.dataset[self._config.test_split]
 
     def _process_doc(self, doc):
         """
