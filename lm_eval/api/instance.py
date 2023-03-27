@@ -1,10 +1,9 @@
 import abc
 
-
 class Instance(abc.ABC):
     """
-    A class used to bind together all necessary information and metadata for
-    running forward pass of a model on a specific datapoint.
+    A class used to bind together all necessary information and metadata for 
+    running forward pass of a model on a specific datapoint. 
 
     """
 
@@ -29,8 +28,7 @@ class Instance(abc.ABC):
         # filtered_resps should end up a dict, with a different key for each set of filters to apply. calculate results against each key in filtered_resps
         self.filtered_resps = {}
 
-        # TODO: add more info as needed for detailed logging
-
+        #TODO: add more info as needed for detailed logging
 
     def __repr__(self):
         return f"Req_{self.request_type}{self.args}{self.id_}"
@@ -46,7 +44,7 @@ class LoglikelihoodInstance(Instance):
     @property
     def args(self):
         """
-        Returns (context,target) where `context` is the input and `target` is
+        Returns (context,target) where `context` is the input and `target` is 
         the string to calculate loglikelihood over, conditional on `context` preceding it.
         """
         return self._arguments
@@ -59,16 +57,13 @@ class RollingLoglikelihoodInstance(Instance):
     def __init__(self, *args, **kwargs):
 
         super().__init__(*args, **kwargs)
-
+    
     @property
     def args(self):
         """
         Returns (string,) where `string` is the string to calculate loglikelihood over
         """
-        return (
-            self._arguments if isinstance(self._arguments, tuple) else (self.arguments,)
-        )
-
+        return self._arguments if isinstance(self._arguments, tuple) else (self.arguments,)
 
 class GenerationInstance(Instance):
 
@@ -78,12 +73,12 @@ class GenerationInstance(Instance):
 
         super().__init__(*args, **kwargs)
 
-        # TODO: generation/model fwd pass kwargs here and should be passed through arguments as well
+        #TODO: generation/model fwd pass kwargs here and should be passed through arguments as well
 
     @property
     def args(self):
         """
-        Returns (string, until) where `string` is the input sequence beginning generation and
+        Returns (string, until) where `string` is the input sequence beginning generation and 
         `until` is a string or list of strings corresponding to stop sequences.
         """
         return self._arguments
