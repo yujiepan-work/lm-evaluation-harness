@@ -22,12 +22,9 @@ class TaskConfig(dict):
     dataset_path: str = None
     dataset_name: str = None
     should_decontaminate: bool = False
-    has_training_docs: bool = None
-    has_validation_docs: bool = None
-    has_test_docs: bool = None
-    training_split: str = None
-    validation_split: str = None
-    test_split: str = None
+    training_split: str = False
+    validation_split: str = False
+    test_split: str = False
     doc_to_text: str = None
     doc_to_target: str = None
     aggregation: dict = None
@@ -394,13 +391,22 @@ class ConfigurableTask(Task):
             self._filters.append(filter_pipeline)
 
     def has_training_docs(self):
-        return self._config.has_training_docs
+        if self._config.training_split is not None:
+            return True
+        else:
+            return False
 
     def has_validation_docs(self):
-        return self._config.has_validation_docs
+        if self._config.validation_split is not None:
+            return True
+        else:
+            return False
 
     def has_test_docs(self):
-        return self._config.has_test_docs
+        if self._config.test_split is not None:
+            return True
+        else:
+            return False
 
     def training_docs(self):
         if self._config.training_split is not None:
