@@ -8,6 +8,7 @@ import random
 import datasets
 import numpy as np
 
+from lm_eval.api import METRIC_REGISTRY, AGGREGATION_REGISTRY
 from lm_eval.api.instance import LoglikelihoodInstance, RollingLoglikelihoodInstance, GenerationInstance
 from lm_eval.api.metrics import mean, weighted_perplexity, weighted_mean, bits_per_byte
 from lm_eval import utils
@@ -22,14 +23,15 @@ class TaskConfig(dict):
     dataset_path: str = None
     dataset_name: str = None
     should_decontaminate: bool = False
-    training_split: str = False
-    validation_split: str = False
-    test_split: str = False
+    training_split: str = None
+    validation_split: str = None
+    test_split: str = None
     doc_to_text: str = None
     doc_to_target: str = None
     aggregation: dict = None
     higher_is_better: dict = None
     num_fewshot: int = 0
+    batch_size: int = 1
     metric_list: str = None
     gold_alias: str = None
     output_type: str = "greedy_until"
@@ -369,17 +371,24 @@ class ConfigurableTask(Task):
 
         if self._config.metric_list is not None:
             self._metric_list = {}
-            for metric_name in self._config.metric_list:
-                try:
-                    metric_object = evaluate.load(metric_name)
-                    self._metric_list[metric_name] = metric_object
-                except Exception as ex:
-                    raise Warning(
-                        "{} not found in the evaluate library!".format(metric_name),
-                        "Please check https://huggingface.co/evaluate-metric",
-                    )
+            self._aggregation_list = {}
+            self._higher_is_better = {}
+            for (metric_name, aggregation, higher_is_better) in self._config.metric_list:
 
-        # self.OUTPUT_TYPE == self._config.output_type
+                self._aggregation_list[metric_name] = AGGREGATION_REGISTRY[aggregation]
+                self._higher_is_better[metric_name] = higher_is_better
+
+                if metric_name in METRIC_REGISTRY.keys():
+                    self._metric_list[metric_name] = METRIC_REGISTRY[metric_name]
+                else:
+                    try:
+                        metric_object = evaluate.load(metric_name)
+                        self._metric_list[metric_name] = metric_object
+                    except Exception as ex:
+                        raise Warning(
+                            "{} not found in the evaluate library!".format(metric_name),
+                            "Please check https://huggingface.co/evaluate-metric",
+                        )
 
         self.download(data_dir, cache_dir, download_mode)
         self._training_docs = None
@@ -462,19 +471,11 @@ class ConfigurableTask(Task):
 
     def aggregation(self):
 
-        aggregation_dict = {}
-        for key in self._metric_list.keys():
-            aggregation_dict[key] = mean
-
-        return aggregation_dict
+        return self._aggregation_list
 
     def higher_is_better(self):
-
-        higher_is_better_dict = {}
-        for key in self._metric_list.keys():
-            higher_is_better_dict[key] = True
         
-        return higher_is_better_dict
+        return self._higher_is_better_list
 
 
 class MultipleChoiceTask(Task):
