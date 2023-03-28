@@ -7,4 +7,3 @@ doc_to_target: "{% set answer_choices = ['Yes', 'No', 'Maybe'] %}{{answer_choice
 metric_list: [
   [exact_match, mean, true]
   ]
-
