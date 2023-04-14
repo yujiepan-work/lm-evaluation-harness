@@ -4,7 +4,7 @@
 # prompt category name, and prompt name.
 # This allows us to access prompts
 PROMPT_REGISTRY = {
-    "multiple-choice": {
+    "qa-basic": {
         "question-newline-answer": "Question: {question}\nAnswer:",
         "q-newline-a": "Q: {question}\nA:"
     },
