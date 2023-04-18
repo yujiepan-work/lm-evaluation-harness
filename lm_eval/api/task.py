@@ -14,6 +14,7 @@ from lm_eval.api.metrics import mean, weighted_perplexity, weighted_mean, bits_p
 from lm_eval import utils
 
 from lm_eval.filters import build_filter_ensemble
+from lm_eval.api import samplers
 
 
 @dataclass
@@ -22,10 +23,10 @@ class TaskConfig(dict):
     task_name: str = None
     dataset_path: str = None
     dataset_name: str = None
-    should_decontaminate: bool = False
     training_split: str = None
     validation_split: str = None
     test_split: str = None
+    fewshot_split: str = None # TODO: assert that this not None if num_fewshot > 0. (?) assert if this is same split as one evaling (?)
     doc_to_text: str = None
     doc_to_target: str = None
     aggregation: dict = None
@@ -35,6 +36,8 @@ class TaskConfig(dict):
     metric_list: str = None
     gold_alias: str = None
     output_type: str = "greedy_until"
+    delimiter: str = "\n\n"
+    filters: str = None
 
     def __getitem__(self, item):
         return getattr(self, item)
@@ -64,7 +67,7 @@ class Task(abc.ABC):
         data_dir=None,
         cache_dir=None,
         download_mode=None,
-        config={"num_fewshot": 0},
+        config=None,
     ):
         """
         :param data_dir: str
@@ -93,12 +96,14 @@ class Task(abc.ABC):
         self._fewshot_docs = None
         self._instances = None
 
-        self._config = config if config else {}
+        self._config = TaskConfig(**config) if config else {}
 
         self._filters = []
         for name, components in self._config.get("filters", [["none", ["take_first"]]]):
             filter_pipeline = build_filter_ensemble(name, components)
             self._filters.append(filter_pipeline)
+
+        self.sampler = samplers.Sampler(self.training_docs(), self, rnd=random.Random()) # TODO: pass the correct docs in here
 
     def download(self, data_dir=None, cache_dir=None, download_mode=None):
         """Downloads and returns the task dataset.
@@ -132,10 +137,6 @@ class Task(abc.ABC):
             cache_dir=cache_dir,
             download_mode=download_mode,
         )
-
-    def should_decontaminate(self):
-        """Whether this task supports decontamination against model training set."""
-        return False
 
     @abc.abstractmethod
     def has_training_docs(self):
@@ -224,20 +225,17 @@ class Task(abc.ABC):
 
         instances = []
         for doc_id, doc in enumerate(docs):
-            # sample fewshot context (uses prompt defined in self.doc_to_text())
+            # sample fewshot context
             fewshot_ctx = self.fewshot_context(
-                doc, self._config["num_fewshot"], rnd=random.Random()
+                doc, self._config.num_fewshot, rnd=random.Random()
             )
 
-            # TODO: hardcoded for now: # of runs on each input to be 1. advanced users should have ability to run model multiple times on same input
-            inst = self.construct_requests(doc=doc, ctx=fewshot_ctx, metadata=(self._config["task_name"], doc_id, 2))
+            # TODO: hardcoded for now: # of runs on each input to be 2. # TODO: we should override this if doing greedy gen so users don't waste time+compute
+            inst = self.construct_requests(doc=doc, ctx=fewshot_ctx, metadata=(self._config["task_name"], doc_id, 1))
 
             if not isinstance(inst, list):
                 inst = [inst]
 
-            # inst = inst * self._config["repeats"] # clone requests K times
-
-            # TODO: make sure this is the way we want to handle repeats
             instances.extend(inst)
             
 
@@ -245,7 +243,7 @@ class Task(abc.ABC):
         assert len(self._instances) != 0, "task.build_requests() did not find any docs!"
 
     @abc.abstractmethod
-    def construct_requests(self, doc, ctx,  **kwargs):
+    def construct_requests(self, doc, ctx, **kwargs):
         """Uses RequestFactory to construct Requests and returns an iterable of
         Requests which will be sent to the LM.
 
@@ -318,6 +316,9 @@ class Task(abc.ABC):
         if num_fewshot == 0:
             labeled_examples = ""
         else:
+
+            # labeled_examples = self.sampler.get_context(doc, self._config.num_fewshot)
+
             # for sets with no training docs, draw from other set *but ensure no overlap with current doc*
             if self.has_training_docs():
                 fewshotex = self.fewshot_examples(k=num_fewshot, rnd=rnd)
@@ -355,7 +356,7 @@ class Task(abc.ABC):
 
 class ConfigurableTask(Task):
 
-    VERSION = "0.0"
+    VERSION = "2.0"
     OUTPUT_TYPE = "greedy_until"
 
     def __init__(
@@ -449,7 +450,7 @@ class ConfigurableTask(Task):
     def construct_requests(self, doc, ctx, **kwargs):
 
         if self.OUTPUT_TYPE == "greedy_until":
-            return GenerationInstance(doc=doc, arguments=(ctx, "\n\n"), **kwargs)
+            return GenerationInstance(doc=doc, arguments=(ctx, "\n\n"), id_=0, **kwargs)
 
     def process_results(self, doc, results):
 
@@ -530,10 +531,6 @@ class PerplexityTask(Task, abc.ABC):
 
     OUTPUT_TYPE = "loglikelihood_rolling"
 
-    def should_decontaminate(self):
-        """Whether this task supports decontamination against model training set."""
-        return True
-
     def has_training_docs(self):
         return False
 
@@ -569,10 +566,10 @@ class PerplexityTask(Task, abc.ABC):
     def doc_to_target(self, doc):
         return doc
 
-    def construct_requests(self, doc, ctx):
+    def construct_requests(self, doc, ctx, **kwargs):
         assert not ctx
 
-        return RollingLoglikelihoodInstance(doc=doc, ctx=self.doc_to_target(doc))
+        return RollingLoglikelihoodInstance(doc=doc, arguments=(self.doc_to_target(doc),), id_=0, **kwargs)
         # req = rf.loglikelihood_rolling(self.doc_to_target(doc))
         # return req
 

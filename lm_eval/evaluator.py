@@ -65,7 +65,7 @@ def simple_evaluate(
         assert isinstance(model, lm_eval.api.model.LM)
         lm = model
 
-    task_dict = lm_eval.tasks.get_task_dict(tasks)
+    task_dict = lm_eval.tasks.get_task_dict(tasks, num_fewshot=num_fewshot)
 
     if check_integrity:
         run_task_tests(task_list=tasks)
@@ -164,7 +164,7 @@ def evaluate(
             req.resps.append(x)
 
     ### Postprocess outputs ###
-    # TODO: del model here, maybe () (idea: allow user to specify device of e.g. reward model separately)
+    # TODO: del model here, maybe (idea: allow user to specify device of e.g. reward model separately)
     for task_name, task in task_dict.items():
         task.apply_filters()
 
@@ -179,19 +179,20 @@ def evaluate(
         # TODO: make it possible to use a different metric per key
         for key in task.instances[0].filtered_resps.keys():
             for doc_id, doc in enumerate(task.test_docs() if task.has_test_docs() else task.validation_docs()):
-                # subset instances to only this document id ; sort by id_
+                # subset instances to only this document id ; sort by idx
                 requests = list(filter(lambda x: x.doc_id == doc_id, task.instances))
                 requests.sort(key=lambda x: x.id_)
                 metrics = task.process_results(doc, [req.filtered_resps[key] for req in requests])
                 for metric, value in metrics.items():
                     vals[(task_name, key, metric)].append(value)
-        
+    
+
 
     ### Aggregate results over all datapoints ###
     # aggregate results ; run bootstrap CIs
     for (task_name, key, metric), items in vals.items():
         task = task_dict[task_name]
-        results[task_name + " filter= " + key][metric] = task.aggregation()[metric](items)
+        results[task_name][metric + " - filter=" + key] = task.aggregation()[metric](items)
 
         # hotfix: bleu, chrf, ter seem to be really expensive to bootstrap
         # so we run them less iterations. still looking for a cleaner way to do this
@@ -204,6 +205,6 @@ def evaluate(
         )
 
         if stderr is not None:
-            results[task_name + " filter= " + key][metric + "_stderr"] = stderr(items)
+            results[task_name][metric + " - filter=" + key + "_stderr"] = stderr(items)
 
     return {"results": dict(results), "versions": dict(versions)}

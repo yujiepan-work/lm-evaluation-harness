@@ -42,7 +42,7 @@ from . import lambada
 # from . import cbt
 # from . import lambada_cloze
 # from . import pile
-# from . import wikitext
+from . import wikitext
 # from . import lambada_multilingual
 # from . import mutual
 # from . import truthfulqa
@@ -112,7 +112,7 @@ TASK_REGISTRY = {
     # "lambada_standard_cloze": lambada_cloze.LambadaStandardCloze,
     # # multilingual lambada
     # **lambada_multilingual.construct_tasks(),
-    # "wikitext": wikitext.WikiText,
+    "wikitext": wikitext.WikiText,
     # # "cbt-cn": cbt.CBTCN, # disabled pending context length fix
     # # "cbt-ne": cbt.CBTNE, # disabled pending context length fix
     # "piqa": piqa.PiQA,
@@ -342,9 +342,9 @@ def get_task_name_from_config(task_config):
     return "configurable_{dataset_path}_{dataset_name}".format(**task_config)
 
 
-def get_task_dict(task_name_list: List[Union[str, dict, api.task.Task]]):
+def get_task_dict(task_name_list: List[Union[str, dict, api.task.Task]], num_fewshot=None): # TODO: pass num_fewshot and other cmdline overrides in a better way
     task_name_dict = {
-        task_name: get_task(task_name)(config={"num_fewshot": 0, "task_name": task_name})
+        task_name: get_task(task_name)(config={"num_fewshot": num_fewshot if num_fewshot else 0, "task_name": task_name})
         for task_name in task_name_list
         if isinstance(task_name, str)
     }
