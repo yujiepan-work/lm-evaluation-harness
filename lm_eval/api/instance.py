@@ -64,49 +64,12 @@ class LoglikelihoodInstance(Instance):
 
     request_type: str = "loglikelihood"
 
-    # def __init__(self, *args, **kwargs):
-
-    #     super().__init__(*args, **kwargs)
-
-    @property
-    def args(self):
-        """
-        Returns (context,target) where `context` is the input and `target` is 
-        the string to calculate loglikelihood over, conditional on `context` preceding it.
-        """
-        return self.arguments
-
 @dataclass
 class RollingLoglikelihoodInstance(Instance):
 
     request_type: str = "loglikelihood_rolling"
 
-    # def __init__(self, *args, **kwargs):
-
-    #     super().__init__(*args, **kwargs)
-    
-    @property
-    def args(self):
-        """
-        Returns (string,) where `string` is the string to calculate loglikelihood over
-        """
-        return self.arguments if isinstance(self.arguments, tuple) else (self.arguments,)
-
 @dataclass
 class GenerationInstance(Instance):
 
     request_type: str = "greedy_until"
-
-    # def __init__(self, *args, **kwargs):
-
-    #     super().__init__(*args, **kwargs)
-
-    #     #TODO: generation/model fwd pass kwargs here and should be passed through arguments as well
-
-    @property
-    def args(self):
-        """
-        Returns (string, until) where `string` is the input sequence beginning generation and 
-        `until` is a string or list of strings corresponding to stop sequences.
-        """
-        return self.arguments
