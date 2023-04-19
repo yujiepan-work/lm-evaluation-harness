@@ -16,7 +16,6 @@ class RegexFilter(Filter):
         """
         self.regex_pattern = regex
         self.regex = re.compile(regex)
-        print(self.regex)
 
         self.fallback = fallback
 

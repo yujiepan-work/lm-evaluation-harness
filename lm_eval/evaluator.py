@@ -143,7 +143,7 @@ def evaluate(
         # rnd.shuffle(task_docs)
 
         # for doc_id, doc in enumerate(itertools.islice(task_docs, 0, limit)):
-        task.build_all_requests()
+        task.build_all_requests(limit=limit)
         # aggregate Instances by LM method requested to get output.
         requests[task.OUTPUT_TYPE].extend(task.instances) 
     
@@ -178,7 +178,7 @@ def evaluate(
         # calculate values for each filter setup (TODO: make getting list of keys cleaner)
         # TODO: make it possible to use a different metric per key
         for key in task.instances[0].filtered_resps.keys():
-            for doc_id, doc in enumerate(task.test_docs() if task.has_test_docs() else task.validation_docs()):
+            for doc_id, doc in enumerate(itertools.islice(task.test_docs(), 0, limit) if task.has_test_docs() else task.validation_docs()):
                 # subset instances to only this document id ; sort by idx
                 requests = list(filter(lambda x: x.doc_id == doc_id, task.instances))
                 requests.sort(key=lambda x: x.id_)

@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 @dataclass
 class Instance:
@@ -7,8 +7,8 @@ class Instance:
     arguments: tuple = None
     id_: int = None
     metadata: tuple = None # TODO: better typehints here
-    resps: list = None
-    filtered_resps: list = None
+    resps: list = field(default_factory=list)
+    filtered_resps: dict = field(default_factory=dict)
 
     task_name: str = None
     doc_id: str = None
@@ -16,10 +16,13 @@ class Instance:
 
     def __post_init__(self):
         self.task_name, self.doc_id, self.repeats = self.metadata
-        self.resps = []
-
-        self.filtered_resps = {} # TODO: just make these resps default factories that produce empty dict/list
-
+     
+    @property
+    def args(self):
+        """
+        Returns (string,) where `string` is the string to calculate loglikelihood over
+        """
+        return self.arguments if isinstance(self.arguments, tuple) else (self.arguments,)
 
 # import abc
 

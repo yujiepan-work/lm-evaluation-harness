@@ -29,4 +29,4 @@ def build_filter_ensemble(name, components):
             # add the filter as a pipeline step
             filters.append(f)
 
-    return FilterEnsemble(name=name, components=filters)
+    return FilterEnsemble(name=name, filters=filters)

@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from typing import List
 
 from lm_eval.api.instance import Instance
@@ -25,23 +26,16 @@ class Filter:
         """
         return resps
         
-
-class FilterEnsemble():
+@dataclass
+class FilterEnsemble:
     """
     FilterEnsemble creates a pipeline applying multiple filters.
     Its intended usage is to stack multiple post-processing steps in order. 
     `task.apply_filters` should use a list of FilterEnsemble classes that it stores, to apply each 
     pipeline separately.
     """
-
-    def __init__(self, name: str = None, components=List[Filter]):
-        """
-        Initializes a FilterEnsemble with name `name` and `components` as its filters, in order. 
-        """
-        # name defines the key that will be used to identity the filtered_resps produced by this pipeline.
-        self.name = name
-
-        self.filters = components
+    name: str 
+    filters: List[Filter]
 
     def apply(self, instances: List[Instance]):
 

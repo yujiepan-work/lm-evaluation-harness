@@ -4,6 +4,7 @@ from dataclasses import dataclass
 import re
 import evaluate
 import random
+import itertools
 
 import datasets
 import numpy as np
@@ -27,17 +28,24 @@ class TaskConfig(dict):
     validation_split: str = None
     test_split: str = None
     fewshot_split: str = None # TODO: assert that this not None if num_fewshot > 0. (?) assert if this is same split as one evaling (?)
+    
+    # TODO: add this as more jinja2 appended to start of jinja2 templates. Should allow users to set vars 
+    # s.t. they can define e.g. {% set question = query %} to map dataset columns to "canonical" names in prompts.
+    template_vars: str = None 
     doc_to_text: str = None
     doc_to_target: str = None
-    aggregation: dict = None
-    higher_is_better: dict = None
+
+    # aggregation: dict = None # TODO: remove, I think these 2 are obsolete w/ current metric_list impl.
+    # higher_is_better: dict = None
     num_fewshot: int = 0
     batch_size: int = 1
     metric_list: str = None
     gold_alias: str = None
     output_type: str = "greedy_until"
     delimiter: str = "\n\n"
-    filters: str = None
+    filters: str = None #TODO: need to make this typehint `list`?
+    normalization: str = None # TODO: add length-normalization of various types, mutual info
+    stop_sequences: list = None # TODO: allow passing of stop sequences to greedy gen.
 
     def __getitem__(self, item):
         return getattr(self, item)
@@ -98,10 +106,11 @@ class Task(abc.ABC):
 
         self._config = TaskConfig(**config) if config else {}
 
-        self._filters = []
-        for name, components in self._config.get("filters", [["none", ["take_first"]]]):
-            filter_pipeline = build_filter_ensemble(name, components)
-            self._filters.append(filter_pipeline)
+        if not hasattr(self, "_filters"):
+            self._filters = []
+            for name, components in self._config.get("filters", [["none", ["take_first"]]]):
+                filter_pipeline = build_filter_ensemble(name, components)
+                self._filters.append(filter_pipeline)
 
         self.sampler = samplers.Sampler(self.training_docs(), self, rnd=random.Random()) # TODO: pass the correct docs in here
 
@@ -212,7 +221,7 @@ class Task(abc.ABC):
     def doc_to_target(self, doc):
         pass
 
-    def build_all_requests(self):
+    def build_all_requests(self, limit=None):
         """Build a set of Instances for a task, and store them in task.instances"""
         if self.has_test_docs():
             docs = self.test_docs()
@@ -224,14 +233,14 @@ class Task(abc.ABC):
             ), f"Task dataset (path={self.DATASET_PATH}, name={self.DATASET_NAME}) must have valid or test docs!"
 
         instances = []
-        for doc_id, doc in enumerate(docs):
+        for doc_id, doc in enumerate(itertools.islice(docs, 0, limit) if limit else docs):
             # sample fewshot context
             fewshot_ctx = self.fewshot_context(
                 doc, self._config.num_fewshot, rnd=random.Random()
             )
 
             # TODO: hardcoded for now: # of runs on each input to be 2. # TODO: we should override this if doing greedy gen so users don't waste time+compute
-            inst = self.construct_requests(doc=doc, ctx=fewshot_ctx, metadata=(self._config["task_name"], doc_id, 1))
+            inst = self.construct_requests(doc=doc, ctx=fewshot_ctx, metadata=(self._config["task_name"], doc_id, 2))
 
             if not isinstance(inst, list):
                 inst = [inst]
@@ -395,6 +404,7 @@ class ConfigurableTask(Task):
         self._training_docs = None
         self._fewshot_docs = None
 
+        
         self._filters = []
         for name, components in self._config.get("filters", [["none", ["take_first"]]]):
             filter_pipeline = build_filter_ensemble(name, components)
