@@ -5,7 +5,7 @@
 # This allows us to access prompts
 PROMPT_REGISTRY = {
     "qa-basic": {
-        "question-newline-answer": "Question: {question}\nAnswer:",
+        "question-newline-answer": "Question: {{question}}\nAnswer:",
         "q-newline-a": "Q: {question}\nA:"
     },
 }

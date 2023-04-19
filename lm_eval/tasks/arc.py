@@ -15,6 +15,8 @@ Homepage: https://allenai.org/data/arc
 from lm_eval.api.task import MultipleChoiceTask
 from lm_eval.prompts import get_prompt
 
+from lm_eval import utils
+
 
 _CITATION = """
 @article{Clark2018ThinkYH,
@@ -61,14 +63,15 @@ class ARCEasy(MultipleChoiceTask):
         doc["answerKey"] = num_to_letter.get(doc["answerKey"], doc["answerKey"])
         out_doc = {
             "id": doc["id"],
-            "query": get_prompt("qa-basic:question-newline-answer").format(**doc),
+            "question": doc["question"],
             "choices": doc["choices"]["text"],
             "gold": ["A", "B", "C", "D", "E"].index(doc["answerKey"]),
         }
         return out_doc
 
     def doc_to_text(self, doc):
-        return doc["query"]
+        doc_to_text = get_prompt("qa-basic:question-newline-answer")
+        return utils.apply_template(doc_to_text, doc)
 
     def should_decontaminate(self):
         return True
