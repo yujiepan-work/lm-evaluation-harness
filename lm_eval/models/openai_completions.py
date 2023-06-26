@@ -59,9 +59,9 @@ def oa_completion(**kwargs):
 
 @register_model("openai", "openai-completions", "gooseai")
 class OpenaiCompletionsLM(LM):
-    REQ_CHUNK_SIZE = 20
+    REQ_CHUNK_SIZE = 1
 
-    def __init__(self, engine, truncate=False):
+    def __init__(self, engine, truncate=False, **kwargs):
         """
 
         :param engine: str
@@ -80,14 +80,22 @@ class OpenaiCompletionsLM(LM):
 
         # to make the annoying "Using pad_token, but it is not set yet." error go away
         self.tokenizer.pad_token = "<|endoftext|>"
-        assert self.tokenizer.encode("hello\n\nhello") == [31373, 198, 198, 31373]
+        # assert self.tokenizer.encode("hello\n\nhello") == [31373, 198, 198, 31373]
         self.truncate = truncate
         self.end_of_text_token_id = self.tokenizer.convert_tokens_to_ids(
             ["<|endoftext|>"]
         )[0]
 
         # Read from environment variable OPENAI_API_SECRET_KEY
-        openai.api_key = os.environ["OPENAI_API_SECRET_KEY"]
+        try:
+            openai.api_key = os.environ["OPENAI_API_SECRET_KEY"]
+        except KeyError:
+            pass
+            # raise ValueError(f"Must pass API key via 'OPENAI_API_SECRET_KEY' environment variable!")
+        openai.api_key = "EMPTY"
+        openai.api_base = "http://localhost:8000/v1"
+
+        # TODO: warn user about all **kwargs that are not used by LM in init
 
     @property
     def eot_token_id(self):
@@ -117,6 +125,53 @@ class OpenaiCompletionsLM(LM):
 
     def tok_decode(self, tokens):
         return self.tokenizer.decode(tokens)
+
+    def loglikelihood(self, requests):
+        new_reqs = []
+        for context, continuation in [req.args for req in requests]:
+            if context == "":
+                # end of text as context
+                context_enc = [self.eot_token_id]
+            else:
+                context_enc = self.tok_encode(context)
+
+            continuation_enc = self.tok_encode(continuation)
+
+            new_reqs.append(((context, continuation), context_enc, continuation_enc))
+
+        return self._loglikelihood_tokens(new_reqs)
+
+    def loglikelihood_rolling(self, requests):
+        # TODO: Implement caching once we've confirmed the perplexity implementation
+
+        loglikelihoods = []
+        for (string,) in tqdm(requests):
+            rolling_token_windows = list(
+                map(
+                    utils.make_disjoint_window,
+                    utils.get_rolling_token_windows(
+                        token_list=self.tok_encode(string),
+                        prefix_token=self.eot_token_id,
+                        max_seq_len=self.max_length,
+                        context_len=1,
+                    ),
+                )
+            )
+
+            rolling_token_windows = [(None,) + x for x in rolling_token_windows]
+
+            string_nll = self._loglikelihood_tokens(
+                rolling_token_windows,
+                disable_tqdm=True,
+            )
+
+            # discard is_greedy
+            string_nll = [x[0] for x in string_nll]
+
+            string_nll = sum(string_nll)
+            loglikelihoods.append(string_nll)
+
+        return loglikelihoods
 
     def _loglikelihood_tokens(self, requests, disable_tqdm=False):
         res = []
@@ -148,9 +203,10 @@ class OpenaiCompletionsLM(LM):
                 ctxlens.append(ctxlen)
 
             response = oa_completion(
-                engine=self.engine,
-                prompt=inps,
-                echo=True,
+                model="facebook/opt-125m",
+                # engine=self.engine,
+                prompt=cache_key[0],
+                # echo=True,
                 max_tokens=0,
                 temperature=0.0,
                 logprobs=10,
@@ -173,6 +229,8 @@ class OpenaiCompletionsLM(LM):
         if not requests:
             return []
         res = []
+
+        requests = [req.args for req in requests]
 
         def _collate(x):
             toks = self.tok_encode(x[0])
@@ -197,23 +255,30 @@ class OpenaiCompletionsLM(LM):
         for chunk, until in tqdm(
             list(sameuntil_chunks(re_ord.get_reordered(), self.REQ_CHUNK_SIZE))
         ):
+            until = until.get("until", None)
+            if not until:
+                until = [self.tok_decode(self.eot_token_id)]
             inps = []
             for context, _ in chunk:
-                context_enc = self.tok_encode(context)
-                inp = context_enc[-(self.max_length - self.max_gen_toks) :]
+                # context_enc = self.tok_encode(context)
+                inp = context  # context_enc[-(self.max_length - self.max_gen_toks) :]
                 inps.append(inp)
 
-            response = oa_completion(
-                engine=self.engine,
-                prompt=inps,
-                max_tokens=self.max_gen_toks,
-                temperature=0.0,
-                logprobs=10,
-                stop=until,
+            response = map(
+                lambda inp: oa_completion(
+                    model="EleutherAI/pythia-12b",
+                    # engine=self.engine,
+                    prompt=inp,
+                    max_tokens=self.max_gen_toks,
+                    temperature=0.0,
+                    # logprobs=10,
+                    stop=until,
+                ),
+                inps,
             )
 
-            for resp, (context, until_) in zip(response.choices, chunk):
-                s = resp["text"]
+            for resp, (context, until_) in zip(response, chunk):
+                s = resp.choices[0]["text"]
 
                 for term in until_:
                     s = s.split(term)[0]
