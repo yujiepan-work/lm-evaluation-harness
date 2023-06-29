@@ -1,0 +1,14 @@
+group:
+  - glue
+  - multiple_choice
+task: mnli
+dataset_path: glue
+dataset_name: mnli
+output_type: multiple_choice
+training_split: train
+validation_split: validation_matched
+template_aliases: "{% set answer_choices = ['True', 'Neither', 'False'] %}{% set gold = label %}"
+doc_to_text: "{{premise}}\nQuestion: {{hypothesis.strip().rstrip('.')}}. True, False or Neither?\nAnswer:"
+doc_to_target: "{{gold}}"
+metric_list:
+  - metric: acc

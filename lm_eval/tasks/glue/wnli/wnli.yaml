@@ -1,0 +1,14 @@
+group:
+  - glue
+  - multiple_choice
+task: wnli_yaml
+dataset_path: glue
+dataset_name: wnli
+output_type: multiple_choice
+training_split: train
+validation_split: validation
+template_aliases: "{% set answer_choices = ['False', 'True'] %}{% set gold = label %}"
+doc_to_text: "{{sentence1}}\nQuestion: {{sentence2}} True or False?\nAnswer:"
+doc_to_target: "{{gold}}"
+metric_list:
+  - metric: acc

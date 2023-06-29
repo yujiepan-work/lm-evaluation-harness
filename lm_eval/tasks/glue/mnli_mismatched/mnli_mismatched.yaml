@@ -1,0 +1,3 @@
+include: ../mnli/mnli.yaml
+task: mnli_mismatched_yaml
+validation_split: validation_mismatched

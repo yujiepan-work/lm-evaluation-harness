@@ -1,0 +1,14 @@
+group:
+  - glue
+  - multiple_choice
+task: qnli
+dataset_path: glue
+dataset_name: qnli
+output_type: multiple_choice
+training_split: train
+validation_split: validation
+template_aliases: "{% set answer_choices = ['yes', 'no'] %}{% set gold = label %}"
+doc_to_text: "{{question}}\n{{sentence}}\nQuestion: Does this response answer the question?\nAnswer:"
+doc_to_target: "{{gold}}"
+metric_list:
+  - metric: acc
