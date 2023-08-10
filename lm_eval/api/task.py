@@ -464,7 +464,7 @@ class Task(abc.ABC):
             return labeled_examples + example
         elif type(example) == list:
             return [labeled_examples + ex for ex in example]
-        elif type(example) == int:
+        elif type(example) == int and self._config.output_type == "multiple_choice":
             choices = self.doc_to_choice(doc)
             return labeled_examples + choices[example]
 
@@ -783,10 +783,10 @@ class ConfigurableTask(Task):
                 return doc[doc_to_target]
             else:
                 target_string = utils.apply_template(doc_to_target, doc)
-                if target_string.isdigit():
-                    return ast.literal_eval(target_string)
-                else:
-                    return target_string
+                # if target_string.isdigit():
+                #     return ast.literal_eval(target_string)
+                # else:
+                return target_string
         elif callable(doc_to_target):
             return doc_to_target(doc)
         # Used when applying a Promptsource template
@@ -988,7 +988,7 @@ class ConfigurableTask(Task):
         elif self.OUTPUT_TYPE == "greedy_until":
 
             gold = self.doc_to_target(doc)
-            if type(gold) == int:
+            if type(gold) == int and self._config.doc_to_choice is not None:
                 choices = self.doc_to_choice(doc)
                 gold = choices[gold]
 
