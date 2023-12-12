@@ -1,4 +1,4 @@
-This fork is intended to backup the specific verison that I use in projects.
+This fork is intended as a backup for the specific verisons that I use in projects.
 
 ## sparse-llm
 
